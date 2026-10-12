@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <title>แอดมิน — ฟีดแบ็คลูกค้า</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="/fonts/noto-sans-thai-thai-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/noto-serif-thai-thai-500-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/fraunces-latin-500-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/css/fonts.css">
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/effects.css">
+  <link rel="stylesheet" href="/css/dashboard.css">
+  <link rel="stylesheet" href="/css/widgets.css">
+  <link rel="stylesheet" href="/css/admin.css">
+</head>
+<body>
+  <header class="topbar glass">
+    <div class="container topbar-inner">
+      <a class="logo" href="#/overview">ฟีดแบ็คลูกค้า</a>
+      <button class="btn small menu-btn" id="menu-btn" type="button" aria-expanded="false" aria-controls="nav">เมนู</button>
+      <nav id="nav" class="nav-links" aria-label="เมนูหลัก">
+        <a href="#/overview" data-route="overview">ภาพรวม</a>
+        <a href="#/branches" data-route="branches">สาขา</a>
+        <a href="#/links" data-route="links">ลิงก์และ QR</a>
+        <a href="#/survey" data-route="survey">คำถาม</a>
+        <a href="#/responses" data-route="responses">คำตอบ</a>
+        <a href="#/account" data-route="account">บัญชี</a>
+      </nav>
+    </div>
+  </header>
+  <main class="container dash" id="app" aria-live="polite"><p class="muted">กำลังโหลด…</p></main>
+  <script type="module" src="/js/admin/main.js"></script>
+</body>
+</html>

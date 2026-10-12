@@ -1,0 +1,46 @@
+# สำรองฐานข้อมูล TiDB รายสัปดาห์ด้วย mysqldump (ต่อผ่าน TLS)
+# ต้องตั้ง Repository secrets: DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME
+# ใช้กับ repo แบบ private เท่านั้น — ไฟล์สำรองมีความคิดเห็นของลูกค้า (job จะถูกข้ามอัตโนมัติถ้า repo เป็น public)
+# ยังไม่เคยทดสอบกับ TiDB จริง: ให้กด "Run workflow" ด้วยมือและลอง restore ลง DB ทดสอบก่อนพึ่งพา
+name: db-backup
+
+on:
+  schedule:
+    - cron: "0 20 * * 0" # ทุกวันอาทิตย์ 20:00 UTC = 03:00 น. เวลาไทย (จันทร์)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dump:
+    # ทำงานเฉพาะ repo แบบ private เท่านั้น — artifact ของ repo สาธารณะดาวน์โหลดได้โดยบุคคลภายนอก
+    if: github.event.repository.private == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Install MySQL client
+        run: sudo apt-get update && sudo apt-get install -y mysql-client
+
+      - name: Dump database
+        env:
+          MYSQL_PWD: ${{ secrets.DB_PASSWORD }}
+        run: |
+          set -euo pipefail
+          mysqldump \
+            --host="${{ secrets.DB_HOST }}" --port="${{ secrets.DB_PORT }}" \
+            --user="${{ secrets.DB_USER }}" \
+            --ssl-mode=VERIFY_IDENTITY \
+            --single-transaction --skip-lock-tables --no-tablespaces --column-statistics=0 \
+            --default-character-set=utf8mb4 \
+            "${{ secrets.DB_NAME }}" > backup.sql
+          test -s backup.sql
+          gzip backup.sql
+
+      - name: Upload backup
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-backup-${{ github.run_id }}
+          path: backup.sql.gz
+          retention-days: 30
+          if-no-files-found: error

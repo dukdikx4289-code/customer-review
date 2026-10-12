@@ -1,0 +1,42 @@
+{
+  "name": "customer-review-server",
+  "version": "0.1.0",
+  "description": "Customer review collection API",
+  "main": "src/index.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "node --test --test-concurrency=1 \"tests/**/*.test.js\"",
+    "db:migrate": "knex --knexfile knexfile.js migrate:latest",
+    "db:rollback": "knex --knexfile knexfile.js migrate:rollback",
+    "db:seed": "knex --knexfile knexfile.js seed:run",
+    "sheets:backfill": "node scripts/sheets-backfill.js",
+    "demo:data": "node scripts/demo-data.js",
+    "secrets": "node scripts/gen-secrets.js"
+  },
+  "type": "module",
+  "dependencies": {
+    "@googleapis/sheets": "^18.1.1",
+    "bcryptjs": "^3.0.3",
+    "dotenv": "^18.0.7",
+    "express": "^5.3.0",
+    "express-rate-limit": "^8.7.1",
+    "express-session": "^1.19.0",
+    "helmet": "^8.3.0",
+    "knex": "^3.3.0",
+    "mysql2": "^3.24.5",
+    "nanoid": "^6.0.2",
+    "qrcode": "^1.5.4",
+    "zod": "^4.6.6"
+  },
+  "devDependencies": {
+    "supertest": "^7.3.1"
+  },
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  }
+}

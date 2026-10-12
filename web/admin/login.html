@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <title>เข้าสู่ระบบแอดมิน</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="/fonts/noto-sans-thai-thai-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/noto-serif-thai-thai-500-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/css/fonts.css">
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/effects.css">
+  <link rel="stylesheet" href="/css/admin.css">
+</head>
+<body class="login-page">
+  <main class="login card reveal">
+    <p class="eyebrow">เหนียวหมูไส้แตก · หลังบ้าน</p>
+    <h1>เข้าสู่ระบบแอดมิน</h1>
+    <p class="muted">ระบบเก็บฟีดแบ็คลูกค้า</p>
+    <form id="form" novalidate>
+      <label class="field"><span>ชื่อผู้ใช้</span><input type="text" name="username" autocomplete="username" required autofocus></label>
+      <label class="field"><span>รหัสผ่าน</span><input type="password" name="password" autocomplete="current-password" required></label>
+      <p id="error" class="alert error hidden" role="alert"></p>
+      <button class="btn primary block" type="submit">เข้าสู่ระบบ</button>
+    </form>
+  </main>
+  <script type="module" src="/js/admin/login.js"></script>
+</body>
+</html>

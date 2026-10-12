@@ -1,0 +1,29 @@
+/* ส่วนหัว/ตัวกรองของหน้า Dashboard — ตัวการ์ดอยู่ที่ css/widgets.css */
+.dash { padding-top: calc(16px + env(safe-area-inset-top)); padding-bottom: calc(40px + env(safe-area-inset-bottom)); }
+.dash-head { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: flex-end; justify-content: space-between; margin-bottom: 16px; }
+.dash-head h1 { margin: 0; }
+.dash-head .eyebrow { margin-bottom: 12px; }
+.dash-head .scope { margin: 2px 0 0; color: var(--text-2); }
+
+.filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; overflow: hidden; background: var(--surface); }
+.seg button {
+  appearance: none; border: 0; background: transparent; color: var(--text-2); min-height: 40px; padding: 0 14px;
+  font: 600 .9375rem var(--font); cursor: pointer;
+}
+.seg button[aria-pressed="true"] { background: var(--primary); color: var(--primary-ink); }
+.filters select { width: auto; min-height: 40px; padding: 0 18px; border-radius: 999px; max-width: min(100%, 340px); text-overflow: ellipsis; }
+@media (max-width: 599px) {
+  .filters { width: 100%; }
+  .filters select { width: 100%; max-width: 100%; }
+  .seg { width: 100%; }
+  .seg button { flex: 1; padding: 0 6px; }
+}
+
+.board-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 12px; }
+.hint-line { margin: 0; font-size: .8125rem; color: var(--text-2); }
+.hint-touch { display: none; }
+@media (pointer: coarse) { .hint-mouse { display: none; } .hint-touch { display: inline; } }
+
+.empty { text-align: center; color: var(--text-2); padding: 40px 16px; }
+.updated { font-size: .8125rem; color: var(--text-3); margin-top: 18px; }

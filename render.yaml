@@ -1,0 +1,56 @@
+# Render Blueprint — API (Node.js/Express) | หน้าบ้านอยู่ที่ Vercel (โฟลเดอร์ web/)
+# ค่าที่เป็นความลับ (sync: false) ต้องกรอกเองใน Render Dashboard — ห้ามเขียนลงไฟล์นี้
+services:
+  - type: web
+    name: customer-review-api
+    runtime: node
+    region: singapore # ใกล้ไทยและใกล้ TiDB Cloud (AWS ap-southeast-1)
+    plan: starter # เปิดตลอด ไม่ spin down — จำเป็นต่อ worker ซิงก์ Google Sheets
+    rootDir: server
+    buildCommand: npm ci --omit=dev
+    preDeployCommand: npm run db:migrate # รัน migration ก่อนปล่อยเวอร์ชันใหม่ ถ้าล้มเหลวจะไม่สลับเวอร์ชัน
+    startCommand: node src/index.js
+    healthCheckPath: /healthz
+    autoDeploy: true
+    numInstances: 1 # worker Sheets ออกแบบสำหรับ 1 instance
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "24"
+      - key: SERVE_WEB
+        value: "false" # หน้าบ้านเสิร์ฟจาก Vercel
+      - key: TRUST_PROXY_HOPS
+        value: "2" # Vercel -> Render
+      - key: DASHBOARD_CACHE_TTL_SEC
+        value: "60"
+      - key: SHEETS_SYNC_ENABLED
+        value: "true"
+      - key: SHEETS_SYNC_INTERVAL_SEC
+        value: "30"
+      # --- TiDB Cloud ---
+      - key: DB_HOST
+        sync: false
+      - key: DB_PORT
+        value: "4000"
+      - key: DB_USER
+        sync: false
+      - key: DB_PASSWORD
+        sync: false
+      - key: DB_NAME
+        sync: false
+      - key: DB_SSL
+        value: "true"
+      # --- ความลับ ---
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: LINK_SIGNING_SECRET # เปลี่ยนค่านี้ = ลิงก์/QR ทั้งหมดใช้ไม่ได้ — สำรองไว้ใน password manager
+        sync: false
+      # --- โดเมนที่ผู้ใช้เปิดจริง (Vercel หรือโดเมนของบริษัท) ใช้สร้างลิงก์/QR และตรวจ Origin ของแอดมิน ---
+      - key: PUBLIC_BASE_URL
+        sync: false
+      # --- Google Sheets ---
+      - key: GOOGLE_SHEET_ID
+        sync: false
+      - key: GOOGLE_SERVICE_ACCOUNT_JSON_B64
+        sync: false

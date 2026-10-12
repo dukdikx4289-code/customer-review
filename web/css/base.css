@@ -1,0 +1,175 @@
+/* ระบบดีไซน์: editorial อบอุ่น (กระดาษ + เขียวหมึก + terracotta) — แก้สี/ฟอนต์/มุมโค้งที่ตัวแปรใน :root ที่เดียว
+ * mobile-first (breakpoint 600 / 900 / 1200) | ลูกเล่นอยู่ที่ css/effects.css | ฟอนต์ที่ css/fonts.css */
+:root {
+  color-scheme: light;
+  --bg: #faf7f2;
+  --surface: #ffffff;
+  --surface-2: #f0eae1;
+  --text: #2c3e30;
+  --text-2: #5c6a5a;
+  --text-3: #62705f;
+  --border: rgb(44 62 48 / 12%);
+  --primary: #2c3e30;
+  --primary-hover: #1f2d23;
+  --primary-ink: #faf7f2;
+  --accent: #c86b53;
+  --accent-ink: #b05842; /* ใช้กับข้อความเล็ก (ผ่าน 4.5:1) — --accent ใช้กับตัวใหญ่/ไอคอน/เส้น */
+  --accent-soft: #f2e3df;
+  --sage: #73876b;
+  --series-1: #3b6a4c;
+  --on-strong: #ffffff;
+  --star: #c86b53;
+  --star-off: #62705f;
+  --good: #2f7d3c;
+  --danger: #b3402f;
+  --danger-bg: #fbece8;
+  --warn-bg: #fff1dd;
+  --warn-ink: #7a4a00;
+  --radius: 20px;
+  --radius-sm: 12px;
+  --widget-radius: 24px;
+  --shadow: 0 1px 2px rgb(44 62 48 / 5%), 0 12px 32px rgb(44 62 48 / 6%);
+  --shadow-lift: 0 18px 40px rgb(44 62 48 / 12%);
+  --gutter: 16px;
+  --font: "Inter", "Noto Sans Thai", system-ui, -apple-system, "Segoe UI", Roboto, Tahoma, sans-serif;
+  --font-serif: "Fraunces", "Noto Serif Thai", Georgia, "Times New Roman", serif;
+  --font-mono: "JetBrains Mono", "Noto Sans Thai", ui-monospace, Menlo, Consolas, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:where(:not([data-theme="light"])) {
+    color-scheme: dark;
+    --bg: #121813;
+    --surface: #1a221b;
+    --surface-2: #232c24;
+    --text: #ede9e0;
+    --text-2: #b4bdae;
+    --text-3: #98a393;
+    --border: rgb(237 233 224 / 13%);
+    --primary: #b7cdb1;
+    --primary-hover: #cfe0ca;
+    --primary-ink: #121813;
+    --accent: #e58b72;
+    --accent-ink: #eda08b;
+    --accent-soft: #3a2a25;
+    --sage: #9bb39a;
+    --series-1: #7fb08f;
+    --on-strong: #0b0f0c;
+    --star: #e58b72;
+    --star-off: #98a393;
+    --good: #5fc46f;
+    --danger: #f08a78;
+    --danger-bg: #3a1c19;
+    --warn-bg: #3a2c10;
+    --warn-ink: #f7c873;
+    --shadow: 0 1px 2px rgb(0 0 0 / 35%), 0 12px 32px rgb(0 0 0 / 25%);
+    --shadow-lift: 0 18px 40px rgb(0 0 0 / 45%);
+  }
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  min-height: 100dvh;
+  background: var(--bg);
+  color: var(--text);
+  font: 400 16px/1.65 var(--font);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+/* หัวข้อเป็น serif ให้บรรยากาศเหมือนสิ่งพิมพ์ */
+h1, h2, h3 { font-family: var(--font-serif); font-weight: 500; line-height: 1.25; letter-spacing: -.005em; margin: 0 0 .5em; }
+h1 { font-size: clamp(1.75rem, 5vw, 2.75rem); line-height: 1.15; }
+h2 { font-size: 1.375rem; }
+h3 { font-size: 1.0625rem; }
+p { margin: 0 0 1em; }
+a { color: var(--accent-ink); text-underline-offset: 3px; }
+::selection { background: var(--accent-soft); color: var(--text); }
+
+.container { width: 100%; max-width: 1200px; margin: 0 auto; padding: 0 var(--gutter); }
+.muted { color: var(--text-2); }
+.small { font-size: .875rem; }
+.hidden { display: none !important; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.row.between { justify-content: space-between; }
+.stack > * + * { margin-top: 12px; }
+
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+
+/* ป้ายเล็กแบบ mono + จุดสีส้ม (eyebrow) */
+.eyebrow {
+  display: inline-flex; align-items: center; gap: 10px; margin: 0 0 14px;
+  font: 500 .75rem/1 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; color: var(--text-2);
+}
+.eyebrow::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: none; }
+
+/* ปุ่มทรงเม็ดยา: สูง ≥44px กดง่ายบนจอสัมผัส; ฟอนต์ input ≥16px กัน iOS ซูมเอง */
+.btn {
+  appearance: none;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 44px; padding: 0 22px;
+  border: 1px solid var(--border); border-radius: 999px;
+  background: var(--surface); color: var(--text);
+  font: 600 .9375rem/1 var(--font); cursor: pointer; text-decoration: none;
+  transition: transform .2s ease, background-color .2s, border-color .2s, box-shadow .2s;
+}
+.btn.primary { background: var(--primary); border-color: var(--primary); color: var(--primary-ink); }
+.btn.danger { color: var(--danger); }
+.btn.small { min-height: 36px; padding: 0 16px; font-size: .8125rem; }
+.btn.block { width: 100%; }
+.btn:disabled { opacity: .55; cursor: not-allowed; }
+@media (hover: hover) {
+  .btn:hover:not(:disabled) { border-color: var(--accent); transform: translateY(-1px); }
+  .btn.primary:hover:not(:disabled) { background: var(--primary-hover); border-color: var(--primary-hover); }
+}
+
+.field { display: block; margin-bottom: 14px; }
+.field > span { display: block; font-weight: 600; font-size: .875rem; margin-bottom: 6px; }
+input[type="text"], input[type="password"], input[type="number"], input[type="datetime-local"], select, textarea {
+  width: 100%; min-height: 46px; padding: 10px 14px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--surface); color: var(--text); font: inherit; font-size: 16px;
+  transition: border-color .2s, box-shadow .2s;
+}
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+textarea { min-height: 120px; resize: vertical; }
+
+.card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 18px; box-shadow: var(--shadow);
+}
+.badge {
+  display: inline-block; padding: 3px 12px; border-radius: 999px;
+  background: var(--surface-2); color: var(--text-2); font-size: .75rem; font-weight: 600; letter-spacing: .02em;
+}
+.badge.good { color: var(--good); }
+.badge.off { color: var(--danger); }
+
+.alert { padding: 12px 16px; border-radius: var(--radius-sm); background: var(--warn-bg); color: var(--warn-ink); }
+.alert.error { background: var(--danger-bg); color: var(--danger); }
+
+.toast {
+  position: fixed; left: 50%; bottom: calc(16px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+  max-width: calc(100vw - 32px); padding: 11px 20px; border-radius: 999px;
+  background: var(--primary); color: var(--primary-ink); box-shadow: var(--shadow-lift); z-index: 50; font-size: .9375rem;
+}
+
+/* ตาราง: จอเล็กเลื่อนแนวนอน */
+.table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: .9375rem; }
+th, td { padding: 11px 14px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { font-weight: 600; color: var(--text-2); white-space: nowrap; background: var(--surface); font-size: .8125rem; }
+tr:last-child td { border-bottom: 0; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+.landing { max-width: 720px; padding-top: 14vh; padding-bottom: 8vh; }
+.landing-title { font-size: clamp(2.25rem, 9vw, 4.25rem); line-height: 1.12; margin-bottom: .45em; }
+.landing p.lead { font-size: 1.125rem; color: var(--text-2); max-width: 34rem; }
+
+@media (min-width: 600px) { :root { --gutter: 24px; } .card { padding: 24px; } }
+@media (min-width: 900px) { :root { --gutter: 32px; } }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } * { transition: none !important; animation: none !important; } }

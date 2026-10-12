@@ -1,0 +1,45 @@
+/* หลังบ้านแอดมิน — สีและฟอนต์มาจาก css/base.css, ลูกเล่นจาก css/effects.css */
+.login-page { display: grid; place-items: center; padding: var(--gutter); }
+.login { width: 100%; max-width: 420px; padding: 28px; border-radius: 28px; }
+.login h1 { font-size: 1.75rem; }
+
+.topbar { position: sticky; top: 0; z-index: 20; border-bottom: 1px solid var(--border); padding-top: env(safe-area-inset-top); }
+.topbar-inner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; min-height: 62px; }
+.logo { font: 600 1.125rem/1 var(--font-serif); color: var(--text); text-decoration: none; letter-spacing: -.005em; }
+.nav-links { display: none; width: 100%; flex-direction: column; gap: 2px; padding-bottom: 10px; }
+.nav-links.open { display: flex; }
+.nav-links a { padding: 11px 16px; color: var(--text-2); text-decoration: none; font-weight: 600; font-size: .9375rem; border-radius: 999px; transition: color .2s, background-color .2s; }
+.nav-links a[aria-current="page"] { color: var(--primary-ink); background: var(--primary); }
+@media (hover: hover) { .nav-links a:not([aria-current]):hover { color: var(--text); background: var(--surface-2); } }
+@media (min-width: 900px) {
+  .menu-btn { display: none; }
+  .nav-links { display: flex; flex-direction: row; width: auto; padding: 0; gap: 4px; }
+  .nav-links a { padding: 8px 18px; }
+}
+
+.page-head { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+.page-head h1 { margin: 0; }
+.list { display: grid; gap: 14px; }
+.grid-cards { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); }
+.card + .card { margin-top: 0; }
+
+/* ลิงก์ + QR */
+.link-card { display: grid; gap: 14px; grid-template-columns: 1fr; }
+@media (min-width: 600px) { .link-card.has-qr { grid-template-columns: 1fr 168px; } }
+.link-card h3 { margin: 0 0 4px; }
+.link-card .qr { width: 168px; max-width: 100%; aspect-ratio: 1; background: #fff; border-radius: var(--radius-sm); padding: 6px; border: 1px solid var(--border); }
+.url-row { display: flex; gap: 8px; }
+.url-row input { font-family: var(--font-mono); font-size: .8125rem; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+
+/* ตัวแก้คำถาม */
+.q-edit { display: grid; gap: 10px; }
+.q-edit .head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+.q-edit .two { display: grid; gap: 10px; grid-template-columns: 1fr; }
+@media (min-width: 600px) { .q-edit .two { grid-template-columns: 1fr 1fr; } }
+.check { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; font-weight: 600; }
+.check input { width: 22px; height: 22px; accent-color: var(--accent); }
+.key { font-family: var(--font-mono); font-size: .75rem; color: var(--text-3); }
+
+.pager { display: flex; gap: 10px; align-items: center; justify-content: center; margin-top: 16px; }
+.card + h2, .list + h2 { margin-top: 32px; }

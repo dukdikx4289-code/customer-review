@@ -1,0 +1,55 @@
+# ทดสอบอัตโนมัติทุกครั้งที่ push / เปิด PR: ตั้ง MySQL 8.4 → migrate → seed → npm test
+# (ค่า DB/secret ด้านล่างเป็นค่าทดสอบชั่วคราวใน CI เท่านั้น ไม่เกี่ยวกับ production)
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: ci_root_pw
+          MYSQL_DATABASE: customer_review
+          MYSQL_USER: review
+          MYSQL_PASSWORD: review_ci_pw
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -pci_root_pw"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_USER: review
+      DB_PASSWORD: review_ci_pw
+      DB_NAME: customer_review
+      DB_SSL: "false"
+      SESSION_SECRET: ci-session-secret-0123456789abcdef0123456789
+      LINK_SIGNING_SECRET: ci-link-secret-0123456789abcdef0123456789
+      PUBLIC_BASE_URL: http://localhost:3000
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci
+      - run: npm run db:migrate
+      - run: npm run db:seed
+      - run: npm test

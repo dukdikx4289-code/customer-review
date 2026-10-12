@@ -1,0 +1,81 @@
+/* ลูกเล่น (ทั้งหมดอยู่ที่ไฟล์นี้) — ปิดทั้งหมดได้โดยใส่ class="no-fx" ที่ <html>
+ * js/ui/motion.js จะเติม class "fx" ให้ <html> เฉพาะเมื่อผู้ใช้ไม่ได้ตั้งค่า "ลดการเคลื่อนไหว" และไม่มี no-fx
+ * → ทุก animation/transition ด้านล่างผูกกับ html.fx จึงไม่ทำงานเลยถ้าไม่ได้รับอนุญาต (และเนื้อหาไม่ซ่อนถ้า JS ไม่ทำงาน)
+ * ใช้เฉพาะ transform/opacity เพื่อให้เบา */
+:root { --ease: cubic-bezier(.16, 1, .3, 1); --spring: cubic-bezier(.34, 1.56, .64, 1); }
+
+@keyframes gradientShift { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
+@keyframes pulseDot { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent); } 70%, 100% { box-shadow: 0 0 0 9px transparent; } }
+@keyframes floatOrb { from { transform: translate3d(0, 0, 0) scale(1); } to { transform: translate3d(48px, -36px, 0) scale(1.12); } }
+@keyframes backdropFadeIn { from { opacity: 0; } }
+@keyframes modalSlideIn { from { opacity: 0; transform: translateY(28px) scale(.98); } }
+@keyframes slideIn { from { opacity: 0; transform: translateX(18px); } }
+@keyframes starPop { 0% { transform: scale(1); } 45% { transform: scale(1.28); } 100% { transform: scale(1); } }
+@keyframes drawCheck { to { stroke-dashoffset: 0; } }
+
+/* ---------- 1) หัวเรื่องไล่สี + จุดกระพริบ ---------- */
+.grad-text {
+  background-image: linear-gradient(270deg, var(--accent), var(--sage), var(--text), var(--accent));
+  background-size: 300% 100%;
+  -webkit-background-clip: text; background-clip: text;
+  color: transparent; -webkit-text-fill-color: transparent;
+  padding-bottom: .06em;
+}
+html.fx .grad-text { animation: gradientShift 14s ease infinite; }
+html.fx .eyebrow::before { animation: pulseDot 2.4s ease-out infinite; }
+
+/* แถบเมนูกระจกเบลอ (ใช้กับ .topbar ของแอดมิน) */
+.glass { background: color-mix(in srgb, var(--bg) 88%, transparent); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+
+/* ---------- 2) reveal ตอนเลื่อน + hover ยกการ์ด ---------- */
+html.fx .reveal { opacity: 0; transform: translateY(30px); transition: opacity .8s var(--ease) calc(var(--delay, 0) * .12s), transform .8s var(--ease) calc(var(--delay, 0) * .12s); }
+html.fx .reveal.active { opacity: 1; transform: none; }
+
+@media (hover: hover) {
+  html.fx .lift { transition: transform .35s var(--ease), box-shadow .35s var(--ease), border-color .35s; }
+  html.fx .lift:hover { transform: translateY(-3px); box-shadow: var(--shadow-lift); border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+  html.fx .arrow-link .arrow { display: inline-block; transition: transform .3s var(--ease); }
+  html.fx .arrow-link:hover .arrow { transform: translateX(6px); }
+  html.fx .shift-row { transition: padding-left .3s var(--ease), background-color .3s; }
+  html.fx .shift-row:hover { padding-left: 24px; background-color: color-mix(in srgb, var(--surface) 70%, transparent); }
+}
+
+/* ---------- 3) พื้นหลัง orb ลอย ---------- */
+.orbs { position: fixed; inset: 0; overflow: hidden; z-index: -1; pointer-events: none; }
+.orb { position: absolute; border-radius: 50%; filter: blur(80px); will-change: transform; }
+.orb.o1 { width: 38rem; height: 38rem; top: -12rem; left: -10rem; background: var(--accent-soft); opacity: .9; }
+.orb.o2 { width: 30rem; height: 30rem; top: 28%; right: -12rem; background: var(--sage); opacity: .22; }
+.orb.o3 { width: 26rem; height: 26rem; bottom: -10rem; left: 18%; background: var(--accent); opacity: .14; }
+html.fx .orb { animation: floatOrb 22s ease-in-out infinite alternate; }
+html.fx .orb.o2 { animation-duration: 28s; animation-direction: alternate-reverse; }
+html.fx .orb.o3 { animation-duration: 19s; }
+@media (hover: none) { html.fx .orb { animation: none; } } /* อุปกรณ์สัมผัส: นิ่ง ประหยัดแบต */
+html.no-fx .orbs { display: none; }
+
+/* ---------- 4) โมดอล + ดาวเด้ง + เครื่องหมายถูก ---------- */
+dialog.modal {
+  border: 1px solid var(--border); border-radius: 28px; padding: 0;
+  width: min(960px, calc(100vw - 24px)); max-height: min(88dvh, 900px);
+  background: var(--surface); color: var(--text); box-shadow: var(--shadow-lift);
+  overflow: hidden;
+}
+dialog.modal[open] { display: flex; flex-direction: column; }
+dialog.modal::backdrop { background: rgb(18 24 19 / 55%); -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px); }
+html.fx dialog.modal[open] { animation: modalSlideIn .45s var(--ease); }
+html.fx dialog.modal[open]::backdrop { animation: backdropFadeIn .35s ease; }
+body:has(dialog.modal[open]) { overflow: hidden; }
+.modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 20px 24px 12px; border-bottom: 1px solid var(--border); }
+.modal-head h2 { margin: 0; }
+.modal-head .eyebrow { margin-bottom: 8px; }
+.modal-close {
+  appearance: none; width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--border);
+  background: var(--surface); color: var(--text); font-size: 1.5rem; line-height: 1; cursor: pointer; flex: none;
+  transition: transform .25s var(--ease), background-color .2s;
+}
+@media (hover: hover) { .modal-close:hover { background: var(--surface-2); transform: scale(1.06); } }
+.modal-body { padding: 20px 24px 28px; overflow: auto; min-height: 0; }
+
+html.fx .star.pop svg { animation: starPop .5s var(--spring) both; animation-delay: calc(var(--d, 0) * 45ms); }
+html.fx .q-enter { animation: slideIn .4s var(--ease); }
+.tick svg path { stroke-dasharray: 48; stroke-dashoffset: 0; }
+html.fx .tick svg path { stroke-dashoffset: 48; animation: drawCheck .6s .25s var(--ease) forwards; }
