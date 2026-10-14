@@ -5,7 +5,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://customer-review-api.onrender.com/api/:path*"
+      "destination": "https://customer-review-9s49.onrender.com/api/:path*"
     },
     {
       "source": "/r/:token",
