@@ -59,6 +59,23 @@ function linkCard(l, reload) {
         },
         'หมุนเวียนลิงก์ (ออกใหม่)',
       ),
+      h(
+        'button',
+        {
+          class: 'btn small danger',
+          type: 'button',
+          onclick: () => {
+            const warn = isCustomer ? 'QR ที่แจกหรือพิมพ์ไปแล้วจะใช้ไม่ได้ทันที' : 'ผู้บริหารที่มีลิงก์นี้จะเปิด Dashboard ไม่ได้ทันที';
+            if (confirm(`ลบลิงก์ "${l.label}" ถาวร?\n${warn}\nรีวิวที่ส่งผ่านลิงก์นี้ยังอยู่ครบ · ย้อนกลับไม่ได้`)) {
+              act(async () => {
+                await api(`/admin/links/${l.id}`, { method: 'DELETE' });
+                toast('ลบลิงก์แล้ว');
+              })();
+            }
+          },
+        },
+        'ลบลิงก์',
+      ),
     ),
   );
 

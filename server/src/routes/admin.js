@@ -232,6 +232,16 @@ adminRouter.post('/links/:id/rotate', async (req, res) => {
   res.json(serializeLink(link, new Map(branches.map((b) => [b.id, b.name]))));
 });
 
+// ลบลิงก์ถาวร: QR/ลิงก์ใช้ไม่ได้ทันที แต่รีวิวที่ส่งผ่านลิงก์นี้ยังอยู่ (ปลดการอ้างอิง link_id ก่อนลบ)
+adminRouter.delete('/links/:id', async (req, res) => {
+  const deleted = await db.transaction(async (trx) => {
+    await trx('responses').where({ link_id: req.params.id }).update({ link_id: null });
+    return trx('share_links').where({ id: req.params.id }).del();
+  });
+  if (!deleted) return res.status(404).json({ error: 'not_found' });
+  res.json({ ok: true });
+});
+
 adminRouter.get('/links/:id/qr', async (req, res) => {
   const link = await db('share_links').where({ id: req.params.id }).first();
   if (!link) return res.status(404).json({ error: 'not_found' });

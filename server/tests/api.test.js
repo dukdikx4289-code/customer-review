@@ -204,6 +204,19 @@ test('หมุนเวียนลิงก์: ลิงก์เก่าต
   assert.equal((await request(app).get(`/api/r/${newToken}`)).status, 404);
 });
 
+test('ลบลิงก์: ลิงก์หายถาวร แต่รีวิวที่ส่งผ่านลิงก์ยังอยู่', async () => {
+  const before = await db('responses').where({ link_id: state.customer.id }).count({ n: '*' }).first();
+  assert.ok(Number(before.n) >= 1);
+
+  assert.equal((await admin.delete(`/api/admin/links/${state.customer.id}`)).status, 200);
+  assert.equal(await db('share_links').where({ id: state.customer.id }).first(), undefined);
+  const kept = await db('responses').where({ branch_id: state.branchId }).whereNull('link_id').count({ n: '*' }).first();
+  assert.equal(Number(kept.n), Number(before.n));
+
+  assert.equal((await admin.delete(`/api/admin/links/${state.customer.id}`)).status, 404);
+  assert.equal((await request(app).delete(`/api/admin/links/${state.customer.id}`)).status, 401);
+});
+
 test('ออกจากระบบแล้วเข้า admin ไม่ได้', async () => {
   assert.equal((await admin.post('/api/admin/logout')).status, 200);
   assert.equal((await admin.get('/api/admin/branches')).status, 401);
