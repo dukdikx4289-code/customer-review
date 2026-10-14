@@ -273,6 +273,32 @@ test('ลบลิงก์: ลิงก์หายถาวร แต่ร�
   assert.equal((await request(app).delete(`/api/admin/links/${state.customer.id}`)).status, 401);
 });
 
+test('ลบคำตอบ: ทีละรายการ / ตามตัวกรอง, เข้าคิวลบในชีท, Dashboard อัปเดต', async () => {
+  // ตัวกรอง + รายการคำถามสำหรับแสดงผล
+  const list = await admin.get(`/api/admin/responses?branch_id=${state.branchId}&channel=online&has_comment=1`);
+  assert.equal(list.status, 200);
+  assert.ok(list.body.questions.some((q) => q.key === 'staff_service' && q.type === 'rating'));
+  assert.equal(list.body.total, 1); // รีวิวแรกมีข้อเสนอแนะ, รีวิวที่สองไม่มี
+  assert.equal((await admin.get(`/api/admin/responses?branch_id=${state.branchId}&channel=store`)).body.total, 0);
+  const future = new Date(Date.now() + 2 * 86_400_000).toISOString().slice(0, 10);
+  assert.equal((await admin.get(`/api/admin/responses?branch_id=${state.branchId}&from=${future}`)).body.total, 0);
+
+  const ids = await db('responses').where({ branch_id: state.branchId }).orderBy('id').pluck('id');
+  assert.equal(ids.length, 2);
+  assert.equal((await request(app).post('/api/admin/responses/delete').send({ ids })).status, 401);
+  assert.equal((await admin.post('/api/admin/responses/delete').send({ ids: [] })).status, 422);
+
+  const one = await admin.post('/api/admin/responses/delete').send({ ids: [ids[0]] });
+  assert.equal(one.body.deleted, 1);
+  assert.equal(await db('answers').where({ response_id: ids[0] }).first(), undefined); // cascade
+  assert.ok(await db('sheet_deletions').where({ response_id: ids[0] }).first());
+
+  const all = await admin.post('/api/admin/responses/delete').send({ all: true, filter: { branchId: state.branchId } });
+  assert.equal(all.body.deleted, 1);
+  assert.equal((await admin.get(`/api/admin/stats?range=all&branch_id=${state.branchId}`)).body.totals.responses, 0);
+  await db('sheet_deletions').whereIn('response_id', ids).del();
+});
+
 test('ออกจากระบบแล้วเข้า admin ไม่ได้', async () => {
   assert.equal((await admin.post('/api/admin/logout')).status, 200);
   assert.equal((await admin.get('/api/admin/branches')).status, 401);

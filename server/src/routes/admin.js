@@ -281,17 +281,49 @@ adminRouter.get('/stats', async (req, res) => {
   res.json({ title: survey.title, scope: branchId ? stats.branches[0]?.name ?? '' : 'ทุกสาขา', ...stats });
 });
 
+// ตัวกรองคำตอบ (ใช้ทั้งดูรายการและ "ลบทั้งหมดตามตัวกรอง"): วันที่เป็นวันตามเวลาไทย YYYY-MM-DD (to = รวมทั้งวัน)
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+const bkkDayStart = (day) => new Date(Date.parse(`${day}T00:00:00Z`) - 7 * 3_600_000);
+
+function parseResponseFilter(src) {
+  return {
+    branchId: Number(src.branch_id ?? src.branchId) || null,
+    channel: normalizeChannel(src.channel),
+    from: DAY_RE.test(src.from ?? '') ? bkkDayStart(src.from) : null,
+    to: DAY_RE.test(src.to ?? '') ? new Date(bkkDayStart(src.to).getTime() + 86_400_000) : null,
+    hasComment: src.has_comment === '1' || src.hasComment === true,
+  };
+}
+
+/** textKeys = รหัสคำถามแบบข้อความ (ใช้กับตัวกรอง "มีข้อเสนอแนะ") */
+function applyResponseFilter(q, f, textKeys = []) {
+  if (f.branchId) q.where('r.branch_id', f.branchId);
+  if (f.channel) q.where('r.channel', f.channel);
+  if (f.from) q.where('r.submitted_at', '>=', f.from);
+  if (f.to) q.where('r.submitted_at', '<', f.to);
+  if (f.hasComment) q.whereExists(db('answers as c').whereRaw('c.response_id = r.id').whereIn('c.question_key', textKeys.length ? textKeys : ['']).whereNotNull('c.value_text'));
+  return q;
+}
+
+const textKeysOf = (catalog) => catalog.filter((q) => q.type === 'short_text' || q.type === 'long_text').map((q) => q.key);
+
+/** ชื่อคำถามของทุกเวอร์ชัน เรียงตามเวอร์ชันล่าสุดก่อน แล้วต่อด้วยคำถามที่ถูกลบไปแล้ว — คำตอบเก่าจึงยังมีชื่อแสดง */
+async function questionCatalog() {
+  const versions = await db('survey_versions').orderBy('id', 'desc').select('questions');
+  const catalog = new Map();
+  for (const v of versions) {
+    for (const q of parseJson(v.questions) ?? []) if (!catalog.has(q.key)) catalog.set(q.key, { key: q.key, label: q.label, type: q.type, min: q.config?.min ?? 1, max: q.config?.max ?? 5 });
+  }
+  return [...catalog.values()];
+}
+
 adminRouter.get('/responses', async (req, res) => {
   const page = Math.max(1, Number(req.query.page) || 1);
-  const pageSize = 25;
-  const branchId = req.query.branch_id ? Number(req.query.branch_id) : null;
-  const channel = normalizeChannel(req.query.channel);
+  const pageSize = 20;
+  const filter = parseResponseFilter(req.query);
+  const catalog = await questionCatalog();
 
-  const base = () =>
-    db('responses as r').modify((q) => {
-      if (branchId) q.where('r.branch_id', branchId);
-      if (channel) q.where('r.channel', channel);
-    });
+  const base = () => applyResponseFilter(db('responses as r'), filter, textKeysOf(catalog));
   const [{ n: total }] = await base().count({ n: '*' });
   const rows = await base()
     .leftJoin('branches as b', 'b.id', 'r.branch_id')
@@ -315,6 +347,7 @@ adminRouter.get('/responses', async (req, res) => {
     page,
     pageSize,
     total: Number(total),
+    questions: catalog,
     items: rows.map((r) => ({
       id: r.id,
       submittedAt: new Date(r.submitted_at).toISOString(),
@@ -324,4 +357,33 @@ adminRouter.get('/responses', async (req, res) => {
       answers: byResponse.get(r.id) ?? {},
     })),
   });
+});
+
+/**
+ * ลบคำตอบ (เช่น ข้อมูลทดสอบ): { ids: [...] } หรือ { all: true, filter: {...} } = ทุกรายการที่ตรงตัวกรอง
+ * คำตอบย่อยและคิวส่งชีทถูกลบตาม (cascade) · แถวที่ขึ้นชีทไปแล้วเข้าคิว sheet_deletions ให้ worker ลบออกจากชีท
+ */
+adminRouter.post('/responses/delete', async (req, res) => {
+  const parsed = z
+    .union([
+      z.object({ ids: z.array(z.number().int().positive()).min(1).max(500) }),
+      z.object({ all: z.literal(true), filter: z.record(z.string(), z.unknown()).default({}) }),
+    ])
+    .safeParse(req.body);
+  if (!parsed.success) return validationError(res, parsed.error);
+
+  const textKeys = textKeysOf(await questionCatalog());
+  const deleted = await db.transaction(async (trx) => {
+    const ids = 'ids' in parsed.data
+      ? await trx('responses').whereIn('id', parsed.data.ids).pluck('id')
+      : await applyResponseFilter(trx('responses as r'), parseResponseFilter(parsed.data.filter), textKeys).pluck('r.id');
+    for (let i = 0; i < ids.length; i += 500) {
+      const chunk = ids.slice(i, i + 500);
+      await trx.raw(`INSERT IGNORE INTO sheet_deletions (response_id) VALUES ${chunk.map(() => '(?)').join(',')}`, chunk);
+      await trx('responses').whereIn('id', chunk).del();
+    }
+    return ids.length;
+  });
+  clearStatsCache();
+  res.json({ ok: true, deleted });
 });

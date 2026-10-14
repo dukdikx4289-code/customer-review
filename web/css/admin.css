@@ -45,5 +45,27 @@
 .ch-badge { font-size: .75rem; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-ink); white-space: nowrap; }
 
 .section-tight { margin-bottom: 12px; }
+
+/* หน้าคำตอบ: ตัวกรอง + แถบลบ + การ์ดคำตอบ (สีดาวใช้คลาส s1..s5 จาก css/widgets.css) */
+.resp-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; margin-bottom: 12px; }
+.resp-tools select { width: auto; min-width: 180px; }
+.field.inline { display: inline-flex; align-items: center; gap: 8px; margin: 0; }
+.field.inline > span { font-size: .875rem; color: var(--text-2); margin: 0; }
+.field.inline input { width: auto; min-height: 40px; padding: 6px 10px; }
+.resp-bulk { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 2px 12px; }
+.resp-bulk .grow { flex: 1; }
+.btn.ghost-danger { background: transparent; }
+.resp-card { display: grid; gap: 10px; transition: border-color .2s, box-shadow .2s; }
+.resp-card.is-selected { border-color: var(--danger); box-shadow: 0 0 0 1px var(--danger); }
+.resp-head { display: flex; align-items: center; gap: 10px 12px; flex-wrap: wrap; }
+.resp-check input { width: 20px; height: 20px; accent-color: var(--danger); }
+.resp-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; flex: 1; min-width: 0; font-size: .875rem; }
+.avg-pill { padding: 3px 10px; border-radius: 999px; font-weight: 600; font-size: .8125rem; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.resp-chips { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.resp-chips li { display: inline-flex; align-items: center; gap: 6px; padding: 3px 4px 3px 10px; border: 1px solid var(--border); border-radius: 999px; font-size: .8125rem; background: var(--surface); }
+.resp-chips b { padding: 1px 8px; border-radius: 999px; font-variant-numeric: tabular-nums; }
+.resp-others { margin: 0; font-size: .875rem; }
+.resp-comment { margin: 0; padding: 8px 12px; border-left: 3px solid var(--accent); background: var(--surface-2); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+.resp-comment p { margin: 2px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .pager { display: flex; gap: 10px; align-items: center; justify-content: center; margin-top: 16px; }
 .card + h2, .list + h2 { margin-top: 32px; }

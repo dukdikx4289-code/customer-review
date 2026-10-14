@@ -93,6 +93,20 @@ test('runSyncOnce: ล้มเหลว → ลูกค้าไม่กร�
   await db('responses').where({ id }).del();
 });
 
+test('runDeletesOnce: ลบแถวในชีทตามคิว, ล้มเหลวเก็บไว้ลองใหม่', async () => {
+  await db('sheet_deletions').del();
+  await db('sheet_deletions').insert([{ response_id: 900001 }, { response_id: 900002 }]);
+  const failing = await sync.runDeletesOnce({ client: { deleteRowsByResponseIds: async () => { throw new Error('quota'); } } });
+  assert.equal(failing.failed, 2);
+  assert.equal((await db('sheet_deletions').where({ attempts: 1 })).length, 2);
+
+  const asked = [];
+  const ok = await sync.runDeletesOnce({ client: { deleteRowsByResponseIds: async (ids) => (asked.push(...ids), 1) } });
+  assert.equal(ok.removed, 1);
+  assert.deepEqual(asked.map(Number).sort(), [900001, 900002]);
+  assert.equal((await db('sheet_deletions')).length, 0);
+});
+
 test('queueBackfill: ตั้งทุก response เป็น pending', async () => {
   await db('sheet_outbox').del();
   const id = await makeResponse();

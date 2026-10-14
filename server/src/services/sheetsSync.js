@@ -101,6 +101,18 @@ export function createGoogleClient({ credentialsB64 = config.GOOGLE_SERVICE_ACCO
         requestBody: { values: rows },
       });
     },
+    /** ลบแถวที่คอลัมน์ A (response_id) ตรงกับรายการ — คืนจำนวนแถวที่ลบ (ไม่พบ = 0 ไม่ถือว่าผิดพลาด) */
+    async deleteRowsByResponseIds(ids) {
+      if (tabId == null) await this.ensureTab();
+      const res = await api.spreadsheets.values.get({ spreadsheetId, range: `${TAB}!A:A` });
+      const wanted = new Set(ids.map(String));
+      const rows = (res.data.values ?? []).map((r, i) => [String(r?.[0] ?? ''), i]).filter(([v, i]) => i > 0 && wanted.has(v)).map(([, i]) => i);
+      if (!rows.length) return 0;
+      // ลบจากล่างขึ้นบน ตำแหน่งแถวที่เหลือจะได้ไม่เลื่อน
+      const requests = rows.sort((a, b) => b - a).map((i) => ({ deleteDimension: { range: { sheetId: tabId, dimension: 'ROWS', startIndex: i, endIndex: i + 1 } } }));
+      await api.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests } });
+      return rows.length;
+    },
     /** ทดสอบเขียน→อ่าน→ลบ ในแท็บชั่วคราว _check (ไม่แตะแท็บ responses) */
     async selfTest() {
       const title = '_check';
@@ -177,6 +189,24 @@ export async function runSyncOnce({ client, database = db, now = new Date() } = 
   }
 }
 
+/**
+ * ลบแถวในชีทของคำตอบที่แอดมินลบไปแล้ว (คิว sheet_deletions) ทีละชุด
+ * ล้มเหลว → เก็บไว้ลองใหม่รอบหน้า (ครบ MAX_ATTEMPTS แล้วเลิก ให้แอดมินลบในชีทเอง)
+ */
+export async function runDeletesOnce({ client, database = db } = {}) {
+  const queued = await database('sheet_deletions').where('attempts', '<', MAX_ATTEMPTS).orderBy('id').limit(BATCH);
+  if (!queued.length) return { removed: 0, failed: 0 };
+  try {
+    const removed = await client.deleteRowsByResponseIds(queued.map((q) => q.response_id));
+    await database('sheet_deletions').whereIn('id', queued.map((q) => q.id)).del();
+    return { removed, failed: 0 };
+  } catch (err) {
+    const message = String(err?.message ?? err).slice(0, 500);
+    await database('sheet_deletions').whereIn('id', queued.map((q) => q.id)).update({ attempts: database.raw('attempts + 1'), last_error: message });
+    return { removed: 0, failed: queued.length, error: message };
+  }
+}
+
 /** ตั้งค่า response ทั้งหมดเป็น pending เพื่อส่งใหม่ — ใช้กับชีทใหม่/ว่างเท่านั้น (ถ้าชีทมีข้อมูลเดิมจะซ้ำ) */
 export async function queueBackfill(database = db) {
   await database.raw('INSERT IGNORE INTO sheet_outbox (response_id) SELECT id FROM responses');
@@ -203,6 +233,8 @@ export function startSheetsWorker() {
     try {
       const r = await runSyncOnce({ client });
       if (r.sent || r.failed) console.log(`Sheets sync: ส่ง ${r.sent} แถว, ล้มเหลว ${r.failed}${r.error ? ` (${r.error})` : ''}`);
+      const d = await runDeletesOnce({ client });
+      if (d.removed || d.failed) console.log(`Sheets sync: ลบแถวในชีท ${d.removed} แถว, ล้มเหลว ${d.failed}${d.error ? ` (${d.error})` : ''}`);
     } catch (err) {
       console.error('Sheets sync error', err);
     } finally {
