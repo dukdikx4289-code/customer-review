@@ -144,6 +144,11 @@ test('Dashboard ผู้บริหาร: เห็นข้อมูลร�
   assert.equal(res.body.attention.some((a) => a.branchId === state.branchId), false);
   assert.equal(res.body.comments.some((c) => c.branch === 'สาขาทดสอบ 😀'), true);
   assert.equal(res.body.distribution.length, 5);
+  // การกระจายรายหัวข้อ: ครบ 5 ระดับทุกหัวข้อ และนับรีวิวทดสอบ (taste 5 ดาว, delivery 2 ดาว) ถูกช่อง
+  const dist = Object.fromEntries(res.body.questions.map((q) => [q.key, q.distribution]));
+  assert.ok(res.body.questions.every((q) => q.distribution.length === 5));
+  assert.ok(dist.taste.find((d) => d.score === 5).count >= 1);
+  assert.ok(dist.delivery_on_time.find((d) => d.score === 2).count >= 1);
   // ข้อมูลสำหรับ widget: minimap 7 วัน x 24 ชั่วโมง และช่วงก่อนหน้า (all = ไม่มี)
   assert.equal(res.body.activity.length, 7);
   assert.ok(res.body.activity.every((d) => d.hours.length === 24));

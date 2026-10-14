@@ -129,14 +129,32 @@ body.dragging { user-select: none; -webkit-user-select: none; cursor: grabbing; 
 .clist .text { margin: 0; font-size: .875rem; white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
 .stars-inline { color: var(--star); letter-spacing: 1px; }
 
-/* ---------- แนวโน้ม ---------- */
-.trend-line { width: 100%; height: 56px; display: block; overflow: visible; }
-.trend-line path { fill: none; stroke: var(--series-1); stroke-width: 2; vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }
-.trend-axis { display: flex; justify-content: space-between; font-size: .75rem; color: var(--text-3); margin-top: 4px; }
 details.table-view { margin-top: 10px; }
 details.table-view summary { cursor: pointer; color: var(--text-2); font-size: .8125rem; min-height: 28px; }
 details.table-view table { font-size: .8125rem; }
 details.table-view .table-wrap { max-height: 14rem; overflow: auto; }
+
+/* ---------- การกระจายคะแนนรายหัวข้อ: แถบซ้อน 5★ (เขียว) → 1★ (แดง) สีจาก --score-* ใน base.css ---------- */
+.dist-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: .75rem; color: var(--text-2); }
+.dist-legend span { display: inline-flex; align-items: center; gap: 5px; }
+.dist-legend i { width: 10px; height: 10px; border-radius: 3px; }
+.dist { display: grid; gap: 12px; }
+.dist-head { display: flex; justify-content: space-between; gap: 10px; font-size: .8125rem; margin-bottom: 5px; }
+.dist-head .n { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.dist-head .v { color: var(--text-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dist-bar { display: flex; gap: 2px; height: 22px; border-radius: 6px; overflow: hidden; background: var(--track); }
+.dist-bar > span {
+  flex: 0 0 auto; min-width: 3px; display: grid; place-items: center; overflow: hidden;
+  font: 600 .6875rem/1 var(--font); font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.s5 { background: var(--score-5); color: var(--score-ink-light); }
+.s4 { background: var(--score-4); color: var(--score-ink-dark); }
+.s3 { background: var(--score-3); color: var(--score-ink-dark); }
+.s2 { background: var(--score-2); color: var(--score-ink-dark); }
+.s1 { background: var(--score-1); color: var(--score-ink-light); }
+table.dist-table td.num, table.dist-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+table.dist-table th .dist-chip { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+table.dist-table td small { color: var(--text-3); margin-left: 4px; }
 
 .empty-note { color: var(--text-2); font-size: .875rem; }
 .ok-note { color: var(--good); font-weight: 600; font-size: .875rem; }

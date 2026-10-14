@@ -85,6 +85,22 @@ async function computeStats({ surveyId, branchId, range }) {
   const distribution = [];
   for (let s = min; s <= max; s++) distribution.push({ score: s, count: distMap.get(s) ?? 0 });
 
+  // การกระจายคะแนนของทุกหัวข้อแบบให้คะแนน (จำนวนคนที่ให้แต่ละดาว) — ใช้กับกราฟรายหัวข้อบน Dashboard
+  const qDistRows = ratingQs.length
+    ? await base()
+        .whereIn('a.question_key', ratingQs.map((q) => q.key))
+        .whereNotNull('a.value_number')
+        .groupBy('a.question_key', 'a.value_number')
+        .select('a.question_key', 'a.value_number as score')
+        .count({ n: '*' })
+    : [];
+  const qDistMap = new Map(qDistRows.map((r) => [`${r.question_key}|${Number(r.score)}`, Number(r.n)]));
+  const questionDistribution = (q) => {
+    const lo = q.config?.min ?? 1;
+    const hi = q.config?.max ?? 5;
+    return Array.from({ length: hi - lo + 1 }, (_, i) => ({ score: lo + i, count: qDistMap.get(`${q.key}|${lo + i}`) ?? 0 }));
+  };
+
   const ratedTotal = distribution.reduce((a, d) => a + d.count, 0);
   const satisfied = distribution.filter((d) => d.score >= max - 1).reduce((a, d) => a + d.count, 0);
 
@@ -197,6 +213,9 @@ async function computeStats({ surveyId, branchId, range }) {
       label: q.label,
       avg: round(num(perQuestionMap.get(q.key)?.avg)),
       n: Number(perQuestionMap.get(q.key)?.n ?? 0),
+      min: q.config?.min ?? 1,
+      max: q.config?.max ?? 5,
+      distribution: questionDistribution(q),
     })),
     distribution,
     trend: trendRows.map((r) => ({

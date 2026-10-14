@@ -25,6 +25,15 @@
   --danger-bg: #fbece8;
   --warn-bg: #fff1dd;
   --warn-ink: #7a4a00;
+  /* สีระดับคะแนน 5★ เขียว → 1★ แดง (กราฟการกระจายคะแนน) ใช้ได้ทั้งโหมดสว่าง/มืด
+     ตัวเลขบนแถบ: 5★/1★ ใช้ --score-ink-light, 4★–2★ ใช้ --score-ink-dark (ผ่าน 4.5:1 ทุกสี) */
+  --score-5: #2e7d32;
+  --score-4: #7cb342;
+  --score-3: #f2b705;
+  --score-2: #ef7d22;
+  --score-1: #c62828;
+  --score-ink-light: #ffffff;
+  --score-ink-dark: #1b1f1c;
   --radius: 20px;
   --radius-sm: 12px;
   --widget-radius: 24px;
