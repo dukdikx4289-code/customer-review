@@ -13,6 +13,8 @@
   box-shadow: var(--shadow); padding: 22px 20px;
 }
 
+.logo { display: block; width: auto; height: 92px; margin: 0 auto 14px; }
+.done .logo { height: 110px; margin-bottom: 18px; }
 .top { margin-bottom: 18px; }
 .top .eyebrow { margin-bottom: 4px; max-width: 100%; }
 .brand { font-size: .875rem; color: var(--text-2); margin: 0 0 14px; min-height: 1.3em; }
@@ -88,6 +90,7 @@
 
 /* จอเตี้ย (มือถือแนวนอน) */
 @media (max-height: 480px) {
+  .logo { height: 48px; margin-bottom: 8px; }
   .q-wrap { justify-content: flex-start; }
   .question > legend { font-size: 1.25rem; margin-bottom: 12px; }
   .star { max-width: 56px; }

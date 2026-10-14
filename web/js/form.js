@@ -28,6 +28,9 @@ async function init() {
 
 const isEmpty = (v) => v === undefined || v === null || v === '' || (Array.isArray(v) && v.length === 0);
 
+// โลโก้แบรนด์ (ไฟล์ web/img/logo.png ขนาด 360×252 — ใส่ width/height กันหน้ากระตุกตอนโหลด)
+const logo = () => h('img', { class: 'logo', src: '/img/logo.png', alt: 'เหนียวหมูไส้แตก', width: 360, height: 252, decoding: 'async' });
+
 function header() {
   const total = state.questions.length;
   const bar = h('i');
@@ -35,6 +38,7 @@ function header() {
   return h(
     'header',
     { class: 'top' },
+    logo(),
     h('p', { class: 'eyebrow' }, state.branch ? state.branch.name : state.survey.title),
     h('p', { class: 'brand' }, state.branch ? state.survey.title : ''),
     h('div', { class: 'progress', role: 'progressbar', 'aria-valuemin': 0, 'aria-valuemax': total, 'aria-valuenow': state.index }, bar),
@@ -202,7 +206,7 @@ async function submit(button, errorBox) {
 
 function done(message) {
   clear(app).append(
-    h('div', { class: 'done card-like' }, h('div', { class: 'tick', 'aria-hidden': 'true' }, svg('svg', { viewBox: '0 0 24 24', fill: 'none', 'stroke-width': 2.4, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, svg('path', { d: 'M5 12.5l4.5 4.5L19 7.5' }))), h('h1', { class: 'grad-text' }, 'ขอบคุณค่ะ/ครับ'), h('p', { class: 'muted' }, message || 'ขอบคุณสำหรับความคิดเห็นของคุณ')),
+    h('div', { class: 'done card-like' }, logo(), h('div', { class: 'tick', 'aria-hidden': 'true' }, svg('svg', { viewBox: '0 0 24 24', fill: 'none', 'stroke-width': 2.4, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, svg('path', { d: 'M5 12.5l4.5 4.5L19 7.5' }))), h('h1', { class: 'grad-text' }, 'ขอบคุณค่ะ/ครับ'), h('p', { class: 'muted' }, message || 'ขอบคุณสำหรับความคิดเห็นของคุณ')),
   );
 }
 
