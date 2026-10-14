@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { db } from '../db/knex.js';
 import { loginLimiter } from '../middleware/rateLimit.js';
 import { requireAdmin } from '../middleware/auth.js';
-import { newPublicId, linkUrl } from '../services/tokens.js';
+import { newPublicId, newStaticSig, linkUrl } from '../services/tokens.js';
 import { parseQuestionDefinitions, CHANNELS, normalizeChannel } from '../services/questions.js';
 import { getLatestVersion, parseJson } from '../services/links.js';
 import { getStats, clearStatsCache } from '../services/aggregate.js';
@@ -205,6 +205,7 @@ adminRouter.post('/links', async (req, res) => {
     survey_id: survey.id,
     kind,
     channel,
+    static_sig: kind === 'customer' ? newStaticSig() : null, // QR ลูกค้าคงที่ตลอดอายุลิงก์
     branch_id: branchId,
     label,
     expires_at: parsed.data.expiresAt ? new Date(parsed.data.expiresAt) : null,
@@ -229,10 +230,13 @@ adminRouter.patch('/links/:id', async (req, res) => {
   res.json({ ok: true });
 });
 
-// หมุนเวียน: เพิ่ม token_version ทำให้ลิงก์/QR เดิมใช้ไม่ได้ทันที
+// หมุนเวียน (เฉพาะลิงก์ผู้บริหาร): เพิ่ม token_version ทำให้ลิงก์เดิมใช้ไม่ได้ทันที
+// ลิงก์ลูกค้า (QR) คงที่ตลอดอายุ — ถ้าต้องการ QR ใหม่ให้ลบลิงก์แล้วสร้างใหม่
 adminRouter.post('/links/:id/rotate', async (req, res) => {
-  const n = await db('share_links').where({ id: req.params.id }).increment('token_version', 1);
-  if (!n) return res.status(404).json({ error: 'not_found' });
+  const current = await db('share_links').where({ id: req.params.id }).first();
+  if (!current) return res.status(404).json({ error: 'not_found' });
+  if (current.kind === 'customer') return res.status(409).json({ error: 'static_qr', message: 'QR ลูกค้าเปลี่ยนไม่ได้ — ลบลิงก์แล้วสร้างใหม่แทน' });
+  await db('share_links').where({ id: req.params.id }).increment('token_version', 1);
   const link = await db('share_links').where({ id: req.params.id }).first();
   const branches = await db('branches');
   res.json(serializeLink(link, new Map(branches.map((b) => [b.id, b.name]))));

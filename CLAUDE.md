@@ -49,7 +49,9 @@ npm run sheets:backfill -- --yes           # ส่งคำตอบทั้�
 
 - **Config**: env ตรวจด้วย zod ใน `src/config.js` (ผิด = exit; production ปฏิเสธ secret `change-me*`). เพิ่ม env ต้องแก้ `config.js`, `.env.example`, `render.yaml`; โค้ดอ่านจาก `config` ไม่อ่าน `process.env` ตรง
 - **API error**: `{ error: '<snake_case>' }`; token ผิดทุกกรณีตอบ 404 เหมือนกัน
-- **ลิงก์ลับ**: token = `<public_id 12 ตัว>.<HMAC-SHA256(LINK_SIGNING_SECRET, kind:public_id:token_version)>` (`services/tokens.js`) ไม่เก็บ token เต็มใน DB; ลูกค้า 128 บิต, ผู้บริหาร 256 บิต; หมุนลิงก์ = เพิ่ม `token_version`; เปลี่ยน `LINK_SIGNING_SECRET` = ลิงก์/QR ทั้งหมดตาย
+- **ลิงก์/QR** (`services/tokens.js`): token = `<public_id 12 ตัว>.<signature>`
+  - **ลูกค้า (QR) คงที่ตลอดอายุลิงก์**: signature = รหัสสุ่ม 128 บิตใน `share_links.static_sig` — ไม่ขึ้นกับ secret/deploy/การแก้คำถามหรือสาขา; ไม่มีการหมุนเวียน (API ตอบ 409) ต้องการ QR ใหม่ = ลบลิงก์แล้วสร้างใหม่ — **ห้ามเขียนโค้ดที่ทำให้ QR ลูกค้าเดิมใช้ไม่ได้** (อย่าแก้ `static_sig`/`public_id`, อย่าเปลี่ยน path `/r/`)
+  - ผู้บริหาร: HMAC-SHA256(LINK_SIGNING_SECRET, kind:public_id:token_version) 256 บิต ไม่เก็บ token เต็มใน DB; หมุนลิงก์ = เพิ่ม `token_version`; เปลี่ยน `LINK_SIGNING_SECRET` = ลิงก์ผู้บริหารทั้งหมดตาย (QR ลูกค้าไม่กระทบ)
 - **ช่องทาง หน้าร้าน/ออนไลน์** (`store`/`online`): ลิงก์ลูกค้าต้องมี `share_links.channel`; คำถามมี `channels` (ไม่ระบุ = ทั้งสอง) กรองด้วย `questionsForChannel()` ใน `services/questions.js`; รีวิวเก็บ `responses.channel` เอง (ลิงก์ถูกลบได้); Dashboard/คำตอบ/สถิติรับ `?channel=`; ชีทมีคอลัมน์ `channel`
 - **คำถาม = JSON + versioning**: เผยแพร่ = เพิ่มแถว `survey_versions` ห้ามแก้ของเก่า; `question_key` คงที่ข้ามเวอร์ชัน. เพิ่มชนิดคำถามแก้ 3 ที่: `services/questions.js` (QUESTION_TYPES + validateAnswers), `web/js/form.js`, และ `services/aggregate.js` ถ้าต้องการสถิติ
 - **บันทึกคำตอบ**: `responses` + `answers` + `sheet_outbox` ใน transaction เดียว (`routes/public.js`); honeypot `website` ตอบสำเร็จหลอกโดยไม่บันทึก

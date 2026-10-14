@@ -42,6 +42,7 @@ function linkCard(l, reload) {
     h('div', { class: 'row' }, h('h3', {}, l.label), h('span', { class: 'badge' }, isCustomer ? `ลูกค้า · ${CHANNEL_LABELS[l.channel] ?? 'หน้าร้าน'}` : 'ผู้บริหาร'), statusBadge(l)),
     h('p', { class: 'muted small' }, isCustomer ? `สาขา: ${l.branchName ?? '–'}` : `ขอบเขต: ${l.branchName ?? 'ทุกสาขา'}`, ` · สร้างเมื่อ ${formatDateTime(l.createdAt)}`, l.expiresAt ? ` · หมดอายุ ${formatDateTime(l.expiresAt)}` : '', !isCustomer ? ` · เปิดดู ${l.hitCount} ครั้ง${l.lastUsedAt ? ` (ล่าสุด ${formatDateTime(l.lastUsedAt)})` : ''}` : ''),
     h('div', { class: 'url-row' }, urlInput, h('button', { class: 'btn', type: 'button', onclick: () => copy(l.url) }, 'คัดลอก')),
+    isCustomer ? h('p', { class: 'muted small' }, '🔒 QR นี้คงที่ — แก้คำถาม สาขา หรืออัปเดตระบบแล้วยังใช้ได้เหมือนเดิม จนกว่าจะกด "ลบลิงก์"') : null,
     h(
       'div',
       { class: 'actions' },
@@ -49,25 +50,27 @@ function linkCard(l, reload) {
       isCustomer ? h('a', { class: 'btn small', href: `/api/admin/links/${l.id}/qr?format=svg&download=1` }, 'ดาวน์โหลด QR (SVG)') : null,
       isCustomer ? h('a', { class: 'btn small', href: `/api/admin/links/${l.id}/qr?format=png&download=1` }, 'ดาวน์โหลด QR (PNG)') : null,
       h('button', { class: 'btn small', type: 'button', onclick: act(() => api(`/admin/links/${l.id}`, { method: 'PATCH', body: { isActive: !l.isActive } })) }, l.isActive ? 'ปิดใช้งาน' : 'เปิดใช้งาน'),
+      // QR ลูกค้าคงที่ตลอดอายุลิงก์ (ไม่มีปุ่มหมุนเวียน) — ต้องการ QR ใหม่ = ลบแล้วสร้างใหม่
+      isCustomer
+        ? null
+        : h(
+            'button',
+            {
+              class: 'btn small danger',
+              type: 'button',
+              onclick: () => {
+                if (confirm(`หมุนเวียนลิงก์ "${l.label}"?\nลิงก์เดิมที่ส่งให้ผู้บริหารจะใช้ไม่ได้ทันที ต้องส่งลิงก์ใหม่ให้`)) act(() => api(`/admin/links/${l.id}/rotate`, { method: 'POST' }))();
+              },
+            },
+            'หมุนเวียนลิงก์ (ออกใหม่)',
+          ),
       h(
         'button',
         {
           class: 'btn small danger',
           type: 'button',
           onclick: () => {
-            const warn = isCustomer ? 'QR/ลิงก์เดิมที่แจกหรือพิมพ์ไปแล้วจะใช้ไม่ได้ทันที' : 'ลิงก์เดิมที่ส่งให้ผู้บริหารจะใช้ไม่ได้ทันที ต้องส่งลิงก์ใหม่ให้';
-            if (confirm(`หมุนเวียนลิงก์ "${l.label}"?\n${warn}`)) act(() => api(`/admin/links/${l.id}/rotate`, { method: 'POST' }))();
-          },
-        },
-        'หมุนเวียนลิงก์ (ออกใหม่)',
-      ),
-      h(
-        'button',
-        {
-          class: 'btn small danger',
-          type: 'button',
-          onclick: () => {
-            const warn = isCustomer ? 'QR ที่แจกหรือพิมพ์ไปแล้วจะใช้ไม่ได้ทันที' : 'ผู้บริหารที่มีลิงก์นี้จะเปิด Dashboard ไม่ได้ทันที';
+            const warn = isCustomer ? 'QR ที่แจกหรือพิมพ์ไปแล้วจะใช้ไม่ได้ถาวร ต้องสร้างลิงก์และพิมพ์ QR ใหม่' : 'ผู้บริหารที่มีลิงก์นี้จะเปิด Dashboard ไม่ได้ทันที';
             if (confirm(`ลบลิงก์ "${l.label}" ถาวร?\n${warn}\nรีวิวที่ส่งผ่านลิงก์นี้ยังอยู่ครบ · ย้อนกลับไม่ได้`)) {
               act(async () => {
                 await api(`/admin/links/${l.id}`, { method: 'DELETE' });

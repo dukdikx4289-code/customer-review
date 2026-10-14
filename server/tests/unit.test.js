@@ -42,6 +42,20 @@ test('token: เปลี่ยน version / ชนิด / secret แล้ว�
   assert.equal(tokens.verifySignature(l, signature, 'another-secret-another-secret-12345'), false);
 });
 
+test('token: ลิงก์ลูกค้าที่มี static_sig ไม่ขึ้นกับ secret/version (QR คงที่)', () => {
+  const l = link({ static_sig: tokens.newStaticSig() });
+  const t = tokens.buildToken(l);
+  assert.equal(t, `${l.public_id}.${l.static_sig}`);
+  assert.equal(t.split('.')[1].length, 22);
+  const { signature } = tokens.parseToken(t);
+  assert.ok(tokens.verifySignature(l, signature, 'another-secret-another-secret-12345'));
+  assert.ok(tokens.verifySignature({ ...l, token_version: 9 }, signature));
+  assert.equal(tokens.verifySignature({ ...l, static_sig: tokens.newStaticSig() }, signature), false);
+  // ลิงก์ผู้บริหารยังใช้ HMAC (ไม่สนใจ static_sig)
+  const d = link({ kind: 'dashboard', static_sig: 'x'.repeat(22) });
+  assert.notEqual(tokens.buildToken(d).split('.')[1], d.static_sig);
+});
+
 test('token: รูปแบบผิดถูกปฏิเสธ', () => {
   for (const bad of ['', 'abc', 'a.b', `${'a'.repeat(12)}.`, `${'a'.repeat(12)}.${'b'.repeat(30)}.x`, null, undefined, 'x'.repeat(200)]) {
     assert.equal(tokens.parseToken(bad), null, String(bad));

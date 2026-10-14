@@ -81,6 +81,7 @@ test('สร้างสาขา + ลิงก์ลูกค้า + ลิ�
 
   const d = await admin.post('/api/admin/links').send({ kind: 'dashboard', label: `dash ${suffix}` });
   assert.equal(d.status, 201);
+  state.dashboard = d.body;
   state.dashboardToken = tokenOf(d.body.url);
   assert.match(d.body.url, /\/d\/[0-9A-Za-z]{12}\.[A-Za-z0-9_-]{43}$/);
 
@@ -227,19 +228,36 @@ test('เผยแพร่คำถามเวอร์ชันใหม่: 
   assert.equal(stats.body.totals.responses, 2);
 });
 
-test('หมุนเวียนลิงก์: ลิงก์เก่าตาย ลิงก์ใหม่ใช้ได้; เพิกถอนแล้ว 404', async () => {
-  const rot = await admin.post(`/api/admin/links/${state.customer.id}/rotate`);
-  assert.equal(rot.status, 200);
-  const newToken = tokenOf(rot.body.url);
-  assert.notEqual(newToken, state.customerToken);
-  assert.equal((await request(app).get(`/api/r/${state.customerToken}`)).status, 404);
-  assert.equal((await request(app).get(`/api/r/${newToken}`)).status, 200);
+test('QR ลูกค้าคงที่: หมุนเวียนไม่ได้, แก้ชื่อ/คำถาม/secret แล้วยังใช้ได้; ปิด/หมดอายุ = หยุดชั่วคราว', async () => {
+  const token = state.customerToken;
+  assert.equal((await admin.post(`/api/admin/links/${state.customer.id}/rotate`)).status, 409);
+  await admin.patch(`/api/admin/links/${state.customer.id}`).send({ label: `renamed ${suffix}` });
+  assert.equal((await request(app).get(`/api/r/${token}`)).status, 200);
+  // URL ที่แอดมินเห็นยังเป็น token เดิม (QR เดิม)
+  const listed = (await admin.get(`/api/admin/links?branch_id=${state.branchId}`)).body.find((l) => l.id === state.customer.id);
+  assert.equal(tokenOf(listed.url), token);
+  // เปลี่ยน LINK_SIGNING_SECRET ไม่กระทบ QR ลูกค้า (รหัสเก็บใน DB)
+  const { resolveLink } = await import('../src/services/links.js');
+  const row = await db('share_links').where({ id: state.customer.id }).first();
+  const { verifySignature, parseToken } = await import('../src/services/tokens.js');
+  assert.ok(verifySignature(row, parseToken(token).signature, 'a-completely-different-secret-0123456789'));
+  assert.ok(await resolveLink(token, 'customer'));
 
   await admin.patch(`/api/admin/links/${state.customer.id}`).send({ isActive: false });
-  assert.equal((await request(app).get(`/api/r/${newToken}`)).status, 404);
-
+  assert.equal((await request(app).get(`/api/r/${token}`)).status, 404);
   await admin.patch(`/api/admin/links/${state.customer.id}`).send({ isActive: true, expiresAt: new Date(Date.now() - 1000).toISOString() });
-  assert.equal((await request(app).get(`/api/r/${newToken}`)).status, 404);
+  assert.equal((await request(app).get(`/api/r/${token}`)).status, 404);
+  await admin.patch(`/api/admin/links/${state.customer.id}`).send({ expiresAt: null });
+  assert.equal((await request(app).get(`/api/r/${token}`)).status, 200); // เปิดกลับ = QR เดิมใช้ได้
+});
+
+test('หมุนเวียนลิงก์ผู้บริหาร: ลิงก์เก่าตาย ลิงก์ใหม่ใช้ได้', async () => {
+  const rot = await admin.post(`/api/admin/links/${state.dashboard.id}/rotate`);
+  assert.equal(rot.status, 200);
+  const newToken = tokenOf(rot.body.url);
+  assert.notEqual(newToken, state.dashboardToken);
+  assert.equal((await request(app).get(`/api/d/${state.dashboardToken}/stats`)).status, 404);
+  assert.equal((await request(app).get(`/api/d/${newToken}/stats`)).status, 200);
 });
 
 test('ลบลิงก์: ลิงก์หายถาวร แต่รีวิวที่ส่งผ่านลิงก์ยังอยู่', async () => {
