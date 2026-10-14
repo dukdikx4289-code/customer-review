@@ -1,43 +1,62 @@
 # CLAUDE.md
 
-ระบบเก็บฟีดแบ็คลูกค้า: ลูกค้าสแกน QR/กดลิงก์ → ให้คะแนน (ไม่ล็อกอิน) | แอดมินส่วนกลางจัดการสาขา/คำถาม/ลิงก์ | ผู้บริหารดู Dashboard ผ่านลิงก์ลับ | ซิงก์ไป Google Sheets
+ระบบเก็บฟีดแบ็คลูกค้า: ลูกค้าสแกน QR/กดลิงก์ → ให้คะแนน (ไม่ล็อกอิน) | แอดมินจัดการสาขา/คำถาม/ลิงก์ | ผู้บริหารดู Dashboard ผ่านลิงก์ลับ | ซิงก์ไป Google Sheets
 
 ## โครงสร้าง
 
-- `web/` — หน้าบ้าน HTML/CSS/vanilla JS (ES modules, ไม่มี build, ไม่มีไลบรารีภายนอก) deploy ที่ Vercel; `/r/<token>` ฟอร์มลูกค้า, `/d/<token>` Dashboard, `/admin/` แอดมิน
-  - Dashboard แบบ bento ลากจัดวางได้: **เพิ่ม/แก้การ์ดที่ `web/js/dashboard/widgets.js`** (รายการ `WIDGETS` + ฟังก์ชัน render ต่อใบ), ชิ้นส่วน UI `dashboard/ui.js`, ตัวลากจัดวาง `dashboard/grid.js`, ประกอบหน้า `dashboard-view.js`, หน้าตา `css/widgets.css` (ขนาดการ์ด sm/wide/tall/lg กำหนดที่ `size`)
-- `server/` — Node 24 + Express 5 (ESM), mysql2 + Knex; deploy ที่ Render. `src/routes/` (public, dashboard, admin), `src/services/` (tokens, questions, links, aggregate, sheetsSync, sessionStore), `src/db/migrations|seeds`
-- ฐานข้อมูล: MySQL 8 (Docker) ตอนพัฒนา, **TiDB Cloud Starter** ตอน production (ไวยากรณ์ MySQL มาตรฐานเท่านั้น)
-- `docs/` คู่มือ deploy และแอดมิน | `render.yaml`, `web/vercel.json`, `.github/workflows/db-backup.yml`
+- `web/` — HTML/CSS/vanilla JS (ES modules, ไม่มี build, ไม่มีไลบรารีภายนอก) deploy ที่ Vercel; `/r/<token>` ฟอร์มลูกค้า, `/d/<token>` Dashboard, `/admin/` แอดมิน
+  - Dashboard bento: **เพิ่ม/แก้การ์ดที่ `js/dashboard/widgets.js`** (`WIDGETS` + render ต่อใบ), UI `dashboard/ui.js`, ลากจัดวาง `dashboard/grid.js`, ประกอบหน้า `dashboard-view.js`, สไตล์ `css/widgets.css` (ขนาด sm/wide/tall/lg ที่ `size`)
+  - แอดมิน: `js/admin/main.js` เป็น hash router (`#/branches`, `#/branch/<id>`) หน้าละไฟล์ใน `js/admin/`; เพิ่มหน้า = เพิ่มใน `routes` + nav `data-route`; 401 เด้งไป `login.html`
+- `server/` — Node 24 + Express 5 (ESM), mysql2 + Knex, deploy ที่ Render. `src/routes/` (public, dashboard, admin), `src/services/` (tokens, questions, links, aggregate, sheetsSync, sheetsSetup, sessionStore), `src/db/migrations|seeds`, `scripts/`
+- DB: MySQL 8 (Docker) ตอน dev, **TiDB Cloud Starter** ตอน production (ใช้ไวยากรณ์ MySQL มาตรฐานเท่านั้น)
+- `docs/` คู่มือ deploy/แอดมิน/Google Sheets | `render.yaml`, `web/vercel.json`, `.github/workflows/ci.yml` (MySQL 8.4 → migrate → seed → test), `db-backup.yml`
 
-## คำสั่งที่ใช้บ่อย (รันใน `server/`)
+## สถาปัตยกรรมคำขอ
+
+- Production: เบราว์เซอร์เรียก `/api/*` บนโดเมน Vercel (`web/js/api.js`) → rewrite ไป Render ⇒ same-origin ไม่มี CORS; CSP อยู่ที่ `vercel.json`
+- Dev: `SERVE_WEB` (เปิดเองเมื่อไม่ใช่ production) ให้ Express เสิร์ฟ `web/` ที่ :3000 — ใช้ `localhost` ไม่ใช่ `127.0.0.1` (ไม่งั้นโดน `bad_origin`)
+- `src/app.js`: `/healthz` (ห้ามแตะ DB) → `/api` (no-store) → public/dashboard → `/api/admin` (session + `requireSameOrigin`); log ซ่อน token ด้วย `redact()`
+- แอดมิน: session เก็บใน DB (`sessionStore.js`), กัน CSRF ด้วย SameSite + `Origin` ต้องตรง `PUBLIC_BASE_URL`; route ที่ต้องล็อกอินใช้ `requireAdmin`
+- `src/index.js` เริ่ม HTTP + Sheets worker และปิดทั้งคู่เมื่อ SIGTERM
+
+## คำสั่ง (รันใน `server/`)
 
 ```
-docker compose up -d        # (ที่ root) MySQL ในเครื่อง
-npm run db:migrate && npm run db:seed
-PORT=3000 npm run dev       # เครื่องนี้มี PORT=5000 ใน shell จึงต้องระบุเอง (dotenv ไม่ทับ env ที่มีอยู่)
-npm test                    # ต้องมี MySQL; รันทีละไฟล์ (--test-concurrency=1) และปฏิเสธ DB ที่ไม่ใช่ localhost
-npm run demo:data           # ข้อมูลตัวอย่างสำหรับดู Dashboard  (-- --clear เพื่อลบ)
-npm run secrets             # สร้าง SESSION_SECRET / LINK_SIGNING_SECRET
+docker compose up -d                       # (ที่ root) MySQL ในเครื่อง
+npm run db:migrate && npm run db:seed      # seed สร้างแอดมินแรกจาก ADMIN_BOOTSTRAP_USER/PASSWORD
+npm run db:rollback
+PORT=3000 npm run dev                      # shell เครื่องนี้มี PORT=5000 (dotenv ไม่ทับ env เดิม)
+npm test                                   # ต้องมี MySQL; รันทีละไฟล์; ปฏิเสธ DB ที่ไม่ใช่ localhost
+node --test tests/unit.test.js             # ไฟล์เดียว (+ --test-name-pattern="...")
+npm run demo:data                          # ข้อมูลตัวอย่าง (-- --clear เพื่อลบ)
+npm run secrets                            # สร้าง SESSION_SECRET / LINK_SIGNING_SECRET
+npm run sheets:setup -- --key <key.json> --sheet <URL>
+npm run sheets:check [-- --init]           # --init = สร้างแท็บ/หัวตาราง
+npm run sheets:backfill -- --yes           # ส่งคำตอบทั้งหมดใหม่ (ชีทว่างเท่านั้น ไม่งั้นแถวซ้ำ)
 ```
 
-## ดีไซน์และลูกเล่น (สไตล์ editorial อบอุ่น: กระดาษ + เขียวหมึก + terracotta)
+เทสต์ที่แตะ DB ต้อง import `tests/helpers/localOnly.js`; ไม่มี linter/formatter
 
-- **โทเคนกลางอยู่ที่ `web/css/base.css` (`:root` + โหมดมืด)** — แก้สี/ฟอนต์/มุมโค้งที่นี่ที่เดียว; ฟอนต์ self-host ที่ `css/fonts.css` + `web/fonts/` (OFL) หัวข้อ Fraunces + Noto Serif Thai, เนื้อหา Inter + Noto Sans Thai, ป้ายเล็ก JetBrains Mono
-- **ลูกเล่นทั้งหมดอยู่ที่ `css/effects.css` + `js/ui/motion.js`**: หัวเรื่องไล่สี (`.grad-text`), ป้าย eyebrow + จุดกระพริบ, nav กระจกเบลอ (`.glass`), reveal ตอนเลื่อน (`.reveal`), hover ยกการ์ด (`.lift`), orb ลอยพื้นหลัง, ตัวเลขนับขึ้น (`data-count-to`), ดาวเด้ง/เครื่องหมายถูกวาดเส้น; โมดอลใช้ `js/ui/modal.js` (`<dialog>` เนทีฟ)
-- **ปิดลูกเล่นทั้งหมด:** ใส่ `class="no-fx"` ที่ `<html>` (ระบบปิดเองเมื่อผู้ใช้ตั้ง "ลดการเคลื่อนไหว") — CSS ผูกกับ `html.fx` ที่ motion.js เติมให้เมื่ออนุญาตเท่านั้น จึงไม่ซ่อนเนื้อหาถ้า JS ไม่ทำงาน; animation ใช้เฉพาะ transform/opacity
-- สี: ข้อความเล็กใช้ `--accent-ink`/`--text-2`/`--text-3` (ผ่าน 4.5:1 ตรวจแล้วทั้งสว่าง/มืด); `--accent` ใช้กับตัวใหญ่/ไอคอน/เส้นเท่านั้น; heatmap ใช้พื้นอ่อน + แถบความยาวตามคะแนน เพื่อให้ตัวอักษรอ่านชัดเสมอ
-- การ์ด Dashboard เพิ่มปุ่ม ⤢ เปิดมุมมองเต็ม: ใส่ `expanded` ใน widget (ดู `branchesExpanded` ใน `widgets.js`); ถ้าไม่ใส่ จะแสดง `render` เดิมในกล่องใหญ่
+## ดีไซน์ (editorial อบอุ่น: กระดาษ + เขียวหมึก + terracotta)
+
+- **โทเคนกลางที่ `web/css/base.css` (`:root` + โหมดมืด)** — แก้สี/ฟอนต์/มุมโค้งที่เดียว; ฟอนต์ self-host `css/fonts.css` + `web/fonts/` (OFL): หัวข้อ Fraunces + Noto Serif Thai, เนื้อหา Inter + Noto Sans Thai, ป้าย JetBrains Mono
+- **ลูกเล่นอยู่ที่ `css/effects.css` + `js/ui/motion.js`**: `.grad-text`, eyebrow + จุดกระพริบ, `.glass`, `.reveal`, `.lift`, orb พื้นหลัง, `data-count-to`, ดาวเด้ง/เครื่องหมายถูก; โมดอล `js/ui/modal.js` (`<dialog>`)
+- **ปิดลูกเล่น:** `class="no-fx"` ที่ `<html>` (ปิดเองเมื่อตั้ง "ลดการเคลื่อนไหว"); CSS ผูกกับ `html.fx` ที่ motion.js เติมให้ จึงไม่ซ่อนเนื้อหาถ้า JS ไม่ทำงาน; animate เฉพาะ transform/opacity
+- สี: ข้อความเล็กใช้ `--accent-ink`/`--text-2`/`--text-3` (ผ่าน 4.5:1 ทั้งสองโหมด); `--accent` ใช้กับตัวใหญ่/ไอคอน/เส้นเท่านั้น; heatmap = พื้นอ่อน + แถบยาวตามคะแนน
+- ปุ่ม ⤢ มุมมองเต็ม: ใส่ `expanded` ใน widget (ดู `branchesExpanded`); ไม่ใส่ = ใช้ `render` เดิมในกล่องใหญ่
 
 ## ข้อตกลงสำคัญ (อย่าทำพัง)
 
-- **ลิงก์ลับ**: token = `<public_id 12 ตัว>.<HMAC-SHA256(LINK_SIGNING_SECRET, kind:public_id:token_version)>` ไม่เก็บ token เต็มใน DB; ลูกค้า 128 บิต, ผู้บริหาร 256 บิต; ทุกความล้มเหลวตอบ 404 เหมือนกัน. เปลี่ยน `LINK_SIGNING_SECRET` = ลิงก์/QR ทั้งหมดตาย
-- **คำถามเป็นข้อมูล (JSON) + versioning**: เผยแพร่ = เพิ่ม `survey_versions` แถวใหม่ ห้ามแก้ของเก่า; `question_key` ต้องคงที่ข้ามเวอร์ชัน. เพิ่มชนิดคำถามต้องแก้ 3 ที่: `services/questions.js` (QUESTION_TYPES + validateAnswers), `web/js/form.js` (renderer), และถ้าต้องการสถิติ `services/aggregate.js`
-- **ข้อความจากผู้ใช้**: แสดงผลด้วย `textContent` (helper `h()` ใน `web/js/util.js`) ห้ามใช้ `innerHTML` กับข้อมูลจากผู้ใช้; CSP ของ Vercel ไม่อนุญาต inline script/style (ห้ามใส่ `style="..."` ใน HTML — ตั้งสีผ่าน `el.style.x` ใน JS หรือ class ได้)
-- **Google Sheets**: ใช้ `valueInputOption=RAW` เสมอ (กัน formula injection); ส่งผ่าน `sheet_outbox` + worker ตัวเดียว (Render `numInstances: 1`)
-- **TiDB**: เวลาเก็บเป็น UTC, วันใน Dashboard แปลงเป็น UTC+7 ด้วย `CONVERT_TZ(..., '+00:00', '+07:00')`; เรียงด้วย `submitted_at` ไม่ใช่ id; pool ปิด connection ว่างก่อน 340 วินาที; ต่อ TLS (`DB_SSL=true`)
-- ไม่เก็บ IP ลูกค้า (PDPA); `.env` ห้าม commit; ค่า dev/prod แยกกัน
+- **Config**: env ตรวจด้วย zod ใน `src/config.js` (ผิด = exit; production ปฏิเสธ secret `change-me*`). เพิ่ม env ต้องแก้ `config.js`, `.env.example`, `render.yaml`; โค้ดอ่านจาก `config` ไม่อ่าน `process.env` ตรง
+- **API error**: `{ error: '<snake_case>' }`; token ผิดทุกกรณีตอบ 404 เหมือนกัน
+- **ลิงก์ลับ**: token = `<public_id 12 ตัว>.<HMAC-SHA256(LINK_SIGNING_SECRET, kind:public_id:token_version)>` (`services/tokens.js`) ไม่เก็บ token เต็มใน DB; ลูกค้า 128 บิต, ผู้บริหาร 256 บิต; หมุนลิงก์ = เพิ่ม `token_version`; เปลี่ยน `LINK_SIGNING_SECRET` = ลิงก์/QR ทั้งหมดตาย
+- **คำถาม = JSON + versioning**: เผยแพร่ = เพิ่มแถว `survey_versions` ห้ามแก้ของเก่า; `question_key` คงที่ข้ามเวอร์ชัน. เพิ่มชนิดคำถามแก้ 3 ที่: `services/questions.js` (QUESTION_TYPES + validateAnswers), `web/js/form.js`, และ `services/aggregate.js` ถ้าต้องการสถิติ
+- **บันทึกคำตอบ**: `responses` + `answers` + `sheet_outbox` ใน transaction เดียว (`routes/public.js`); honeypot `website` ตอบสำเร็จหลอกโดยไม่บันทึก
+- **ข้อความผู้ใช้**: ใช้ `textContent` (`h()` ใน `web/js/util.js`) ห้าม `innerHTML`; CSP ห้าม inline script/style (ห้าม `style="..."` ใน HTML — ใช้ `el.style.x` หรือ class)
+- **Google Sheets** (`docs/google-sheets.md`): key Service Account ห้ามอยู่ในโปรเจกต์ (repo public; `sheets:setup` ปฏิเสธ); worker ห้ามทำ API ล่มเมื่อ key เสีย; `valueInputOption=RAW` เสมอ (กัน formula injection); คอลัมน์เพิ่มต่อท้ายเท่านั้น ห้ามลบ/สลับ (`mergeHeader`); ส่งผ่าน `sheet_outbox` + worker ตัวเดียว (Render `numInstances: 1`)
+- **TiDB**: เก็บเวลา UTC, Dashboard แปลงเป็น UTC+7 ด้วย `CONVERT_TZ(..., '+00:00', '+07:00')`; เรียงด้วย `submitted_at` ไม่ใช่ id; pool ปิด connection ว่างก่อน 340 วินาที (`db/knex.js`); TLS (`DB_SSL=true`)
+- ไม่เก็บ IP ลูกค้า (PDPA); ห้าม commit `.env`; แยกค่า dev/prod
 
 ## สถานะ
 
-Phase 0–5 เสร็จและทดสอบแล้ว (เทสต์ 32 รายการผ่าน; Dashboard ใช้ดีไซน์ bento ลากจัดวางได้). Phase 6: ไฟล์ deploy เตรียมไว้แล้ว ยังไม่ได้ deploy จริงและยังไม่เคยรัน migration กับ TiDB Cloud จริง — ดู `docs/deploy.md`
+Phase 0–5 เสร็จและทดสอบแล้ว. Phase 6: เตรียมไฟล์ deploy แล้ว ยังไม่ deploy จริง และยังไม่เคยรัน migration กับ TiDB Cloud — ดู `docs/deploy.md`

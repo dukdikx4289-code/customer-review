@@ -15,7 +15,9 @@
     "db:seed": "knex --knexfile knexfile.js seed:run",
     "sheets:backfill": "node scripts/sheets-backfill.js",
     "demo:data": "node scripts/demo-data.js",
-    "secrets": "node scripts/gen-secrets.js"
+    "secrets": "node scripts/gen-secrets.js",
+    "sheets:setup": "node scripts/sheets-setup.js",
+    "sheets:check": "node scripts/sheets-check.js"
   },
   "type": "module",
   "dependencies": {

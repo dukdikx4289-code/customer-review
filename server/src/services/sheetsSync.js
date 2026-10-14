@@ -36,17 +36,50 @@ export function buildRow(header, response, answerMap) {
   });
 }
 
-export function createGoogleClient() {
-  const credentials = JSON.parse(Buffer.from(config.GOOGLE_SERVICE_ACCOUNT_JSON_B64, 'base64').toString('utf8'));
+/**
+ * ตัวเชื่อม Google Sheets (ใช้ Service Account) — รับ credentials/ชีทจาก config เป็นค่าเริ่มต้น
+ * ส่งค่าเองได้ (ใช้ในสคริปต์ตรวจการเชื่อมต่อ)
+ */
+export function createGoogleClient({ credentialsB64 = config.GOOGLE_SERVICE_ACCOUNT_JSON_B64, spreadsheetId = config.GOOGLE_SHEET_ID } = {}) {
+  const credentials = JSON.parse(Buffer.from(credentialsB64, 'base64').toString('utf8'));
   const authClient = new googleAuth.GoogleAuth({ credentials, scopes: ['https://www.googleapis.com/auth/spreadsheets'] });
   const api = sheetsApi({ version: 'v4', auth: authClient });
-  const spreadsheetId = config.GOOGLE_SHEET_ID;
+  let tabId = null;
+
+  /** หัวตาราง: ตัวหนา พื้นอุ่น ตรึงแถวแรก และปรับความกว้างคอลัมน์ — ล้มเหลวได้ (แค่ไม่สวย ไม่กระทบข้อมูล) */
+  async function formatHeader(columns) {
+    if (tabId == null) return;
+    const header = { sheetId: tabId, startRowIndex: 0, endRowIndex: 1 };
+    await api.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [
+          { repeatCell: { range: header, cell: { userEnteredFormat: { backgroundColor: { red: 0.94, green: 0.92, blue: 0.88 }, textFormat: { bold: true } } }, fields: 'userEnteredFormat(backgroundColor,textFormat)' } },
+          { updateSheetProperties: { properties: { sheetId: tabId, gridProperties: { frozenRowCount: 1 } }, fields: 'gridProperties.frozenRowCount' } },
+          { autoResizeDimensions: { dimensions: { sheetId: tabId, dimension: 'COLUMNS', startIndex: 0, endIndex: columns } } },
+        ],
+      },
+    });
+  }
 
   return {
+    TAB,
+    email: credentials.client_email,
+    spreadsheetId,
+    async info() {
+      const meta = await api.spreadsheets.get({ spreadsheetId, fields: 'properties.title,sheets.properties(sheetId,title)' });
+      return { title: meta.data.properties?.title ?? '', tabs: (meta.data.sheets ?? []).map((x) => x.properties.title) };
+    },
     async ensureTab() {
-      const meta = await api.spreadsheets.get({ spreadsheetId, fields: 'sheets.properties.title' });
-      const has = meta.data.sheets?.some((s) => s.properties.title === TAB);
-      if (!has) await api.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests: [{ addSheet: { properties: { title: TAB } } }] } });
+      const meta = await api.spreadsheets.get({ spreadsheetId, fields: 'sheets.properties(sheetId,title)' });
+      const found = meta.data.sheets?.find((x) => x.properties.title === TAB);
+      if (found) {
+        tabId = found.properties.sheetId;
+        return false;
+      }
+      const res = await api.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests: [{ addSheet: { properties: { title: TAB } } }] } });
+      tabId = res.data.replies?.[0]?.addSheet?.properties?.sheetId ?? null;
+      return true;
     },
     async readHeader() {
       const res = await api.spreadsheets.values.get({ spreadsheetId, range: `${TAB}!1:1` });
@@ -54,6 +87,7 @@ export function createGoogleClient() {
     },
     async writeHeader(header) {
       await api.spreadsheets.values.update({ spreadsheetId, range: `${TAB}!A1`, valueInputOption: 'RAW', requestBody: { values: [header] } });
+      await formatHeader(header.length).catch(() => {});
     },
     async appendRows(rows) {
       // RAW: ค่าทุกตัวเป็นข้อความ/ตัวเลขตรงๆ ไม่ถูกตีความเป็นสูตร (กัน formula injection จากคอมเมนต์ที่ขึ้นต้นด้วย "=")
@@ -65,10 +99,24 @@ export function createGoogleClient() {
         requestBody: { values: rows },
       });
     },
+    /** ทดสอบเขียน→อ่าน→ลบ ในแท็บชั่วคราว _check (ไม่แตะแท็บ responses) */
+    async selfTest() {
+      const title = '_check';
+      const add = await api.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests: [{ addSheet: { properties: { title } } }] } });
+      const id = add.data.replies?.[0]?.addSheet?.properties?.sheetId;
+      try {
+        const stamp = `ok ${new Date().toISOString()}`;
+        await api.spreadsheets.values.update({ spreadsheetId, range: `${title}!A1`, valueInputOption: 'RAW', requestBody: { values: [[stamp]] } });
+        const back = await api.spreadsheets.values.get({ spreadsheetId, range: `${title}!A1` });
+        return back.data.values?.[0]?.[0] === stamp;
+      } finally {
+        await api.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests: [{ deleteSheet: { sheetId: id } }] } }).catch(() => {});
+      }
+    },
   };
 }
 
-async function allQuestionKeys(database) {
+export async function allQuestionKeys(database = db) {
   const versions = await database('survey_versions').orderBy('id').select('questions');
   const keys = [];
   for (const v of versions) for (const q of parseJson(v.questions)) if (!keys.includes(q.key)) keys.push(q.key);
@@ -138,7 +186,14 @@ export function startSheetsWorker() {
     console.log('Google Sheets sync: ปิดอยู่ (SHEETS_SYNC_ENABLED=false)');
     return () => {};
   }
-  const client = createGoogleClient();
+  let client;
+  try {
+    client = createGoogleClient();
+  } catch (err) {
+    // key เสีย/คัดลอกไม่ครบ: ห้ามทำให้ API ล่ม (ลูกค้าต้องส่งฟอร์มได้เสมอ) — คิวใน sheet_outbox จะสะสมไว้ส่งทีหลัง
+    console.error(`Google Sheets sync: ปิดการทำงาน เพราะอ่าน GOOGLE_SERVICE_ACCOUNT_JSON_B64 ไม่ได้ (${err.message}) — รัน npm run sheets:check เพื่อตรวจ`);
+    return () => {};
+  }
   let running = false;
   const tick = async () => {
     if (running) return;

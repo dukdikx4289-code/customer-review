@@ -8,3 +8,6 @@ Thumbs.db
 coverage/
 .vercel/
 service-account*.json
+*-key.json
+*credentials*.json
+keys/

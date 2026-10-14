@@ -23,11 +23,15 @@
 
 ## 2. Google Sheets
 
-1. [Google Cloud Console](https://console.cloud.google.com) → สร้างโปรเจกต์ → **เปิด Google Sheets API**
-2. IAM → Service Accounts → สร้างบัญชี → Keys → **Add key → JSON** (ดาวน์โหลดไฟล์ — **ห้าม commit**)
-3. สร้าง Google Sheet เปล่า → Share ให้อีเมลของ service account (`...@...iam.gserviceaccount.com`) สิทธิ์ **Editor** → คัดลอก **Sheet ID** จาก URL (`/d/<ID>/edit`)
-4. แปลง key เป็น base64 (PowerShell): `[Convert]::ToBase64String([IO.File]::ReadAllBytes("key.json"))` → ใช้เป็น `GOOGLE_SERVICE_ACCOUNT_JSON_B64`
-5. แยกชีท/key ของ dev กับ production
+ทำตาม **[docs/google-sheets.md](google-sheets.md)** (ประมาณ 10 นาที) แล้วใช้คำสั่งช่วยตั้งค่า/ตรวจสอบ:
+
+```bash
+cd server
+npm run sheets:setup -- --key "<ไฟล์ key.json นอกโฟลเดอร์โปรเจกต์>" --sheet "<URL ชีท>" --copy   # --copy = คัดลอกค่า base64 ไปวางใน Render
+npm run sheets:check -- --init                                                                  # ตรวจการเชื่อมต่อ + สร้างแท็บ/หัวตาราง
+```
+
+ใช้ key/ชีท **คนละชุด** กับตอนพัฒนา แล้วนำ `GOOGLE_SHEET_ID` กับ `GOOGLE_SERVICE_ACCOUNT_JSON_B64` ไปตั้งใน Render (ขั้น 3)
 
 ## 3. Render (API)
 
