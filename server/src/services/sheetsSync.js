@@ -6,17 +6,18 @@ import { parseJson } from './links.js';
 const TAB = 'responses';
 const BATCH = 200;
 const MAX_ATTEMPTS = 12;
-const FIXED_COLUMNS = ['response_id', 'submitted_at (เวลาไทย)', 'branch_code', 'branch_name', 'link_label'];
+const FIXED_COLUMNS = ['response_id', 'submitted_at (เวลาไทย)', 'branch_code', 'branch_name', 'link_label', 'channel'];
+const CHANNEL_TEXT = { store: 'หน้าร้าน', online: 'ออนไลน์' };
 
 /** แปลงเวลา UTC เป็นข้อความเวลาไทย  YYYY-MM-DD HH:mm:ss */
 export function formatBangkok(date) {
   return new Date(new Date(date).getTime() + 7 * 3_600_000).toISOString().slice(0, 19).replace('T', ' ');
 }
 
-/** ลำดับคอลัมน์ = คอลัมน์ที่มีอยู่แล้วในชีท + คำถามใหม่ต่อท้าย (ไม่ลบ/ไม่สลับของเดิม) */
+/** ลำดับคอลัมน์ = คอลัมน์ที่มีอยู่แล้วในชีท + คอลัมน์ระบบ/คำถามใหม่ต่อท้าย (ไม่ลบ/ไม่สลับของเดิม) */
 export function mergeHeader(existing, questionKeys) {
   const header = existing.length ? [...existing] : [...FIXED_COLUMNS];
-  for (const key of questionKeys) if (!header.includes(key)) header.push(key);
+  for (const key of [...FIXED_COLUMNS, ...questionKeys]) if (!header.includes(key)) header.push(key);
   return header;
 }
 
@@ -27,6 +28,7 @@ export function buildRow(header, response, answerMap) {
     [FIXED_COLUMNS[2]]: response.branch_code ?? '',
     [FIXED_COLUMNS[3]]: response.branch_name ?? '',
     [FIXED_COLUMNS[4]]: response.link_label ?? '',
+    [FIXED_COLUMNS[5]]: CHANNEL_TEXT[response.channel] ?? '',
   };
   return header.map((col) => {
     if (col in fixed) return fixed[col];
@@ -142,7 +144,7 @@ export async function runSyncOnce({ client, database = db, now = new Date() } = 
       .leftJoin('share_links as l', 'l.id', 'r.link_id')
       .whereIn('r.id', ids)
       .orderBy('r.submitted_at')
-      .select('r.id', 'r.submitted_at', 'b.code as branch_code', 'b.name as branch_name', 'l.label as link_label');
+      .select('r.id', 'r.submitted_at', 'r.channel', 'b.code as branch_code', 'b.name as branch_name', 'l.label as link_label');
     const answers = await database('answers').whereIn('response_id', ids);
     const byResponse = new Map();
     for (const a of answers) {

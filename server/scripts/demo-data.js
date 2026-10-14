@@ -30,14 +30,21 @@ const version = await db('survey_versions').where({ survey_id: survey.id }).orde
 const branches = await db('branches').where({ is_active: true }).orderBy('code');
 
 // ค่าเฉลี่ย "ที่ตั้งใจ" ต่อสาขา/หัวข้อ (สุ่มแบบคงที่ตามลำดับสาขา) เพื่อให้ Dashboard มีทั้งจุดดีและจุดที่ต้องแก้ไข
-const profileFor = (i) => {
+// หัวข้อที่ตอบขึ้นกับช่องทาง (หน้าร้าน/ออนไลน์) ตามคำถามเวอร์ชันล่าสุด
+const questions = typeof version.questions === 'string' ? JSON.parse(version.questions) : version.questions;
+const ratingKeys = (channel) => questions.filter((q) => q.type === 'rating' && (!q.channels || q.channels.includes(channel))).map((q) => q.key);
+const profileFor = (i, channel) => {
   const base = [4.5, 4.2, 3.3, 4.0, 4.4, 3.6, 4.1, 4.3][i % 8];
-  return {
+  const means = {
     taste: base,
     food_quality: Math.min(4.8, base + 0.1),
+    staff_service: i % 4 === 1 ? 3.1 : Math.min(4.8, base + 0.3), // บางสาขาบริการต้องปรับ
+    cleanliness: Math.min(4.7, base + 0.1),
     delivery_on_time: i % 3 === 0 ? 3.0 : Math.min(4.7, base + 0.2), // บางสาขาส่งช้า
+    packaging: Math.min(4.6, base),
     overall_satisfaction: base - 0.1,
   };
+  return Object.fromEntries(ratingKeys(channel).map((k) => [k, means[k] ?? base]));
 };
 const comments = [
   'อร่อยมาก แต่ส่งช้าไปหน่อย',
@@ -55,20 +62,21 @@ const rnd = (mean) => clamp(mean + (Math.random() + Math.random() - 1) * 1.6);
 
 const links = [];
 for (const b of branches) {
-  const pid = newPublicId();
-  const [id] = await db('share_links').insert({ public_id: pid, survey_id: survey.id, kind: 'customer', branch_id: b.id, label: `${DEMO_LABEL} QR ${b.name}` });
-  links.push({ id, branch: b });
+  for (const [channel, name] of [['store', 'หน้าร้าน'], ['online', 'ออนไลน์']]) {
+    const [id] = await db('share_links').insert({ public_id: newPublicId(), survey_id: survey.id, kind: 'customer', channel, branch_id: b.id, label: `${DEMO_LABEL} ${name} ${b.name}` });
+    links.push({ id, branch: b, channel });
+  }
 }
 const [dashId] = await db('share_links').insert({ public_id: newPublicId(), survey_id: survey.id, kind: 'dashboard', branch_id: null, label: `${DEMO_LABEL} ผู้บริหาร (ทุกสาขา)` });
 
 let count = 0;
 for (let day = 44; day >= 0; day--) {
-  for (const { id: linkId, branch } of links) {
-    const n = 2 + Math.floor(Math.random() * 6);
+  for (const { id: linkId, branch, channel } of links) {
+    const n = 1 + Math.floor(Math.random() * 4);
     for (let i = 0; i < n; i++) {
       const at = new Date(Date.now() - day * 86_400_000 - Math.floor(Math.random() * 12 * 3_600_000));
-      const p = profileFor(branches.indexOf(branch));
-      const [rid] = await db('responses').insert({ survey_id: survey.id, version_id: version.id, branch_id: branch.id, link_id: linkId, submitted_at: at, meta: JSON.stringify({ demo: true }) });
+      const p = profileFor(branches.indexOf(branch), channel);
+      const [rid] = await db('responses').insert({ survey_id: survey.id, version_id: version.id, branch_id: branch.id, link_id: linkId, channel, submitted_at: at, meta: JSON.stringify({ demo: true }) });
       const rows = Object.entries(p).map(([key, mean]) => ({ response_id: rid, question_key: key, value_number: rnd(mean) }));
       if (Math.random() < 0.35) rows.push({ response_id: rid, question_key: 'comment', value_text: comments[Math.floor(Math.random() * comments.length)] });
       await db('answers').insert(rows);

@@ -37,12 +37,12 @@ npm run sheets:backfill -- --yes           # ส่งคำตอบทั้�
 
 เทสต์ที่แตะ DB ต้อง import `tests/helpers/localOnly.js`; ไม่มี linter/formatter
 
-## ดีไซน์ (editorial อบอุ่น: กระดาษ + เขียวหมึก + terracotta)
+## ดีไซน์ (โทนขาวสะอาด + เขียวจากโลโก้แบรนด์)
 
-- **โทเคนกลางที่ `web/css/base.css` (`:root` + โหมดมืด)** — แก้สี/ฟอนต์/มุมโค้งที่เดียว; ฟอนต์ self-host `css/fonts.css` + `web/fonts/` (OFL): หัวข้อ Fraunces + Noto Serif Thai, เนื้อหา Inter + Noto Sans Thai, ป้าย JetBrains Mono
+- **โทเคนกลางที่ `web/css/base.css` (`:root`)** — แก้สี/ฟอนต์/มุมโค้งที่เดียว; โหมดสว่างอย่างเดียว (ไม่มีโหมดมืด); orb พื้นหลังปิดเป็นค่าเริ่มต้น; โลโก้ `web/img/logo.png`; ฟอนต์ self-host `css/fonts.css` + `web/fonts/` (OFL): หัวข้อ Fraunces + Noto Serif Thai, เนื้อหา Inter + Noto Sans Thai, ป้าย JetBrains Mono
 - **ลูกเล่นอยู่ที่ `css/effects.css` + `js/ui/motion.js`**: `.grad-text`, eyebrow + จุดกระพริบ, `.glass`, `.reveal`, `.lift`, orb พื้นหลัง, `data-count-to`, ดาวเด้ง/เครื่องหมายถูก; โมดอล `js/ui/modal.js` (`<dialog>`)
 - **ปิดลูกเล่น:** `class="no-fx"` ที่ `<html>` (ปิดเองเมื่อตั้ง "ลดการเคลื่อนไหว"); CSS ผูกกับ `html.fx` ที่ motion.js เติมให้ จึงไม่ซ่อนเนื้อหาถ้า JS ไม่ทำงาน; animate เฉพาะ transform/opacity
-- สี: ข้อความเล็กใช้ `--accent-ink`/`--text-2`/`--text-3` (ผ่าน 4.5:1 ทั้งสองโหมด); `--accent` ใช้กับตัวใหญ่/ไอคอน/เส้นเท่านั้น; heatmap = พื้นอ่อน + แถบยาวตามคะแนน
+- สี: ข้อความเล็กใช้ `--accent-ink`/`--text-2`/`--text-3` (ผ่าน 4.5:1 บนพื้นขาว); `--accent` ใช้กับตัวใหญ่/ไอคอน/เส้นเท่านั้น; heatmap = พื้นอ่อน + แถบยาวตามคะแนน; ระดับดาว 5→1 ใช้ `--score-5..1` (เขียว→แดง)
 - ปุ่ม ⤢ มุมมองเต็ม: ใส่ `expanded` ใน widget (ดู `branchesExpanded`); ไม่ใส่ = ใช้ `render` เดิมในกล่องใหญ่
 
 ## ข้อตกลงสำคัญ (อย่าทำพัง)
@@ -50,6 +50,7 @@ npm run sheets:backfill -- --yes           # ส่งคำตอบทั้�
 - **Config**: env ตรวจด้วย zod ใน `src/config.js` (ผิด = exit; production ปฏิเสธ secret `change-me*`). เพิ่ม env ต้องแก้ `config.js`, `.env.example`, `render.yaml`; โค้ดอ่านจาก `config` ไม่อ่าน `process.env` ตรง
 - **API error**: `{ error: '<snake_case>' }`; token ผิดทุกกรณีตอบ 404 เหมือนกัน
 - **ลิงก์ลับ**: token = `<public_id 12 ตัว>.<HMAC-SHA256(LINK_SIGNING_SECRET, kind:public_id:token_version)>` (`services/tokens.js`) ไม่เก็บ token เต็มใน DB; ลูกค้า 128 บิต, ผู้บริหาร 256 บิต; หมุนลิงก์ = เพิ่ม `token_version`; เปลี่ยน `LINK_SIGNING_SECRET` = ลิงก์/QR ทั้งหมดตาย
+- **ช่องทาง หน้าร้าน/ออนไลน์** (`store`/`online`): ลิงก์ลูกค้าต้องมี `share_links.channel`; คำถามมี `channels` (ไม่ระบุ = ทั้งสอง) กรองด้วย `questionsForChannel()` ใน `services/questions.js`; รีวิวเก็บ `responses.channel` เอง (ลิงก์ถูกลบได้); Dashboard/คำตอบ/สถิติรับ `?channel=`; ชีทมีคอลัมน์ `channel`
 - **คำถาม = JSON + versioning**: เผยแพร่ = เพิ่มแถว `survey_versions` ห้ามแก้ของเก่า; `question_key` คงที่ข้ามเวอร์ชัน. เพิ่มชนิดคำถามแก้ 3 ที่: `services/questions.js` (QUESTION_TYPES + validateAnswers), `web/js/form.js`, และ `services/aggregate.js` ถ้าต้องการสถิติ
 - **บันทึกคำตอบ**: `responses` + `answers` + `sheet_outbox` ใน transaction เดียว (`routes/public.js`); honeypot `website` ตอบสำเร็จหลอกโดยไม่บันทึก
 - **ข้อความผู้ใช้**: ใช้ `textContent` (`h()` ใน `web/js/util.js`) ห้าม `innerHTML`; CSP ห้าม inline script/style (ห้าม `style="..."` ใน HTML — ใช้ `el.style.x` หรือ class)

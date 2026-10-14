@@ -8,7 +8,8 @@ const root = document.documentElement;
 export const motionOK = () => !root.classList.contains('no-fx') && !reduce.matches;
 
 /** เรียกครั้งเดียวต่อหน้า: เติม class "fx" (ถ้าอนุญาต) และสร้างชั้น orb */
-export function initEffects({ orbs = true } = {}) {
+// orb พื้นหลังปิดเป็นค่าเริ่มต้น (ดีไซน์โทนขาวสะอาด) — เปิดได้ด้วย initEffects({ orbs: true })
+export function initEffects({ orbs = false } = {}) {
   const apply = () => root.classList.toggle('fx', motionOK());
   apply();
   reduce.addEventListener('change', apply);

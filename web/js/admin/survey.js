@@ -9,10 +9,20 @@ const TYPE_LABELS = {
   long_text: 'ข้อความยาว',
 };
 
+const CHANNELS = [
+  ['store', 'หน้าร้าน'],
+  ['online', 'ออนไลน์'],
+];
+const VIEWS = [['all', 'ทั้งหมด'], ...CHANNELS];
+
 const rand = () => Math.random().toString(36).slice(2, 7);
 
-function newQuestion(type) {
-  const base = { key: `q_${rand()}${rand()}`, type, label: '', required: false, config: {}, isNew: true };
+// ไม่ระบุช่องทาง (คำถามจากเวอร์ชันเก่า) = แสดงทั้งสองช่องทาง
+const channelsOf = (q) => (Array.isArray(q.channels) && q.channels.length ? q.channels : CHANNELS.map(([c]) => c));
+
+function newQuestion(type, view) {
+  const channels = view === 'all' ? CHANNELS.map(([c]) => c) : [view];
+  const base = { key: `q_${rand()}${rand()}`, type, label: '', required: false, channels, config: {}, isNew: true };
   if (type === 'rating') base.config = { min: 1, max: 5, labels: { 1: 'ควรปรับปรุง', 5: 'ดีเยี่ยม' } };
   if (type === 'single_choice' || type === 'multi_choice') base.config = { options: [{ value: `o_${rand()}`, label: 'ตัวเลือก 1' }, { value: `o_${rand()}`, label: 'ตัวเลือก 2' }] };
   if (type === 'long_text') base.config = { maxLength: 1000 };
@@ -24,7 +34,9 @@ export async function surveyView() {
   let questions = structuredClone(data.questions);
   let title = data.title;
   let thankYou = data.settings?.thankYou ?? '';
+  let view = 'all'; // ดูชุดคำถามที่ลูกค้าแต่ละช่องทางเห็น
   const holder = h('div', {});
+  for (const q of questions) q.channels = channelsOf(q);
 
   function move(i, d) {
     const j = i + d;
@@ -36,6 +48,26 @@ export async function surveyView() {
   function questionCard(q, i) {
     const label = h('input', { type: 'text', value: q.label, maxlength: 200, 'aria-label': 'คำถาม', oninput: (e) => (q.label = e.target.value) });
     const required = h('input', { type: 'checkbox', checked: q.required, onchange: (e) => (q.required = e.target.checked) });
+    const channelBoxes = CHANNELS.map(([value, text]) =>
+      h(
+        'label',
+        { class: 'check' },
+        h('input', {
+          type: 'checkbox',
+          checked: q.channels.includes(value),
+          onchange: (e) => {
+            const next = e.target.checked ? [...new Set([...q.channels, value])] : q.channels.filter((c) => c !== value);
+            if (!next.length) {
+              e.target.checked = true; // ต้องอยู่อย่างน้อย 1 ช่องทาง
+              return toast('คำถามต้องแสดงอย่างน้อย 1 ช่องทาง');
+            }
+            q.channels = CHANNELS.map(([c]) => c).filter((c) => next.includes(c));
+            if (view !== 'all' && !q.channels.includes(view)) draw();
+          },
+        }),
+        text,
+      ),
+    );
     const extras = [];
 
     if (q.type === 'rating') {
@@ -64,10 +96,10 @@ export async function surveyView() {
     return h(
       'article',
       { class: 'card q-edit' },
-      h('div', { class: 'head' }, h('div', {}, h('strong', {}, `ข้อ ${i + 1}`), ' ', h('span', { class: 'badge' }, TYPE_LABELS[q.type]), ' ', h('span', { class: 'key', title: 'รหัสภายในของคำถาม คงที่ข้ามเวอร์ชันเพื่อให้เทรนด์ต่อเนื่อง' }, q.key)), h('div', { class: 'row' }, h('button', { class: 'btn small', type: 'button', disabled: i === 0, 'aria-label': 'เลื่อนขึ้น', onclick: () => move(i, -1) }, '↑'), h('button', { class: 'btn small', type: 'button', disabled: i === questions.length - 1, 'aria-label': 'เลื่อนลง', onclick: () => move(i, 1) }, '↓'), h('button', { class: 'btn small danger', type: 'button', onclick: () => { if (confirm('ลบคำถามนี้ออกจากฟอร์ม?\n(คำตอบที่เก็บไปแล้วยังอยู่ครบ)')) { questions.splice(i, 1); draw(); } } }, 'ลบ'))),
+      h('div', { class: 'head' }, h('div', {}, h('strong', {}, `ข้อ ${i + 1}`), ' ', h('span', { class: 'badge' }, TYPE_LABELS[q.type]), ' ', h('span', { class: 'key', title: 'รหัสภายในของคำถาม คงที่ข้ามเวอร์ชันเพื่อให้เทรนด์ต่อเนื่อง' }, q.key)), h('div', { class: 'row' }, h('button', { class: 'btn small', type: 'button', disabled: view !== 'all' || i === 0, title: view !== 'all' ? 'จัดลำดับได้ในมุมมอง "ทั้งหมด"' : undefined, 'aria-label': 'เลื่อนขึ้น', onclick: () => move(i, -1) }, '↑'), h('button', { class: 'btn small', type: 'button', disabled: view !== 'all' || i === questions.length - 1, title: view !== 'all' ? 'จัดลำดับได้ในมุมมอง "ทั้งหมด"' : undefined, 'aria-label': 'เลื่อนลง', onclick: () => move(i, 1) }, '↓'), h('button', { class: 'btn small danger', type: 'button', onclick: () => { if (confirm('ลบคำถามนี้ออกจากฟอร์ม?\n(คำตอบที่เก็บไปแล้วยังอยู่ครบ)')) { questions.splice(i, 1); draw(); } } }, 'ลบ'))),
       h('label', { class: 'field' }, h('span', {}, 'ข้อความคำถาม'), label),
       ...extras,
-      h('label', { class: 'check' }, required, 'บังคับตอบ'),
+      h('div', { class: 'row q-flags' }, h('span', { class: 'muted small' }, 'แสดงในช่องทาง:'), ...channelBoxes, h('span', { class: 'q-sep', 'aria-hidden': 'true' }), h('label', { class: 'check' }, required, 'บังคับตอบ')),
     );
   }
 
@@ -95,10 +127,19 @@ export async function surveyView() {
       }
     });
 
+    const count = (c) => questions.filter((q) => q.channels.includes(c)).length;
+    const viewSeg = h(
+      'div',
+      { class: 'seg', role: 'group', 'aria-label': 'ดูคำถามตามช่องทาง' },
+      VIEWS.map(([value, text]) => h('button', { type: 'button', 'aria-pressed': String(view === value), onclick: () => ((view = value), draw()) }, value === 'all' ? `${text} (${questions.length})` : `${text} (${count(value)})`)),
+    );
+    const visible = questions.map((q, i) => [q, i]).filter(([q]) => view === 'all' || q.channels.includes(view));
+
     clear(holder).append(
       h('section', { class: 'card stack' }, h('label', { class: 'field' }, h('span', {}, 'ชื่อแบบสอบถาม'), h('input', { type: 'text', value: title, maxlength: 200, oninput: (e) => (title = e.target.value) })), h('label', { class: 'field' }, h('span', {}, 'ข้อความขอบคุณหลังส่ง'), h('input', { type: 'text', value: thankYou, maxlength: 200, oninput: (e) => (thankYou = e.target.value) }))),
-      h('div', { class: 'list section' }, questions.map(questionCard)),
-      h('div', { class: 'card row section' }, typeSel, h('button', { class: 'btn', type: 'button', onclick: () => { questions.push(newQuestion(typeSel.value)); draw(); window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }); } }, '+ เพิ่มคำถาม')),
+      h('div', { class: 'row between section' }, viewSeg, h('span', { class: 'muted small' }, view === 'all' ? 'ข้อที่อยู่ทั้งสองช่องทางรวมสถิติกันได้' : `ลำดับที่ลูกค้า${VIEWS.find(([v]) => v === view)[1]}เห็น`)),
+      h('div', { class: 'list section' }, visible.length ? visible.map(([q, i]) => questionCard(q, i)) : h('p', { class: 'muted' }, 'ยังไม่มีคำถามในช่องทางนี้')),
+      h('div', { class: 'card row section' }, typeSel, h('button', { class: 'btn', type: 'button', onclick: () => { questions.push(newQuestion(typeSel.value, view)); draw(); window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }); } }, view === 'all' ? '+ เพิ่มคำถาม (ทั้งสองช่องทาง)' : `+ เพิ่มคำถาม (${VIEWS.find(([v]) => v === view)[1]})`)),
       error,
       h('div', { class: 'row section' }, publish, h('span', { class: 'muted small' }, `ปัจจุบันใช้เวอร์ชัน ${data.version}`)),
       h('details', { class: 'table-view section' }, h('summary', {}, 'ประวัติเวอร์ชัน'), h('ul', {}, data.versions.map((v) => h('li', {}, `เวอร์ชัน ${v.version_no} — ${formatDateTime(v.published_at)}`)))),

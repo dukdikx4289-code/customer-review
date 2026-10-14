@@ -3,6 +3,17 @@ import { z } from 'zod';
 // ชนิดคำถามที่รองรับ — เพิ่มชนิดใหม่ = เพิ่มใน QUESTION_TYPES, validateAnswer และ renderer ฝั่งหน้าเว็บ
 export const QUESTION_TYPES = ['rating', 'single_choice', 'multi_choice', 'short_text', 'long_text'];
 
+// ช่องทางที่ลูกค้าตอบ: ลิงก์ลูกค้าผูกกับช่องทาง และคำถามแต่ละข้อกำหนดได้ว่าแสดงในช่องทางไหน (ไม่ระบุ = ทั้งสองช่องทาง)
+export const CHANNELS = ['store', 'online'];
+export const CHANNEL_LABELS = { store: 'หน้าร้าน', online: 'ออนไลน์' };
+
+export const normalizeChannel = (value) => (CHANNELS.includes(value) ? value : null);
+
+export const inChannel = (q, channel) => !Array.isArray(q.channels) || q.channels.length === 0 || q.channels.includes(channel);
+
+/** คำถามที่แสดงในช่องทางนี้ (เรียงตามลำดับเดิม) */
+export const questionsForChannel = (questions, channel) => questions.filter((q) => inChannel(q, channel));
+
 const KEY_RE = /^[a-z][a-z0-9_]{1,62}$/;
 
 const optionSchema = z.object({
@@ -16,6 +27,11 @@ const questionSchema = z
     type: z.enum(QUESTION_TYPES),
     label: z.string().trim().min(1).max(200),
     required: z.boolean().default(false),
+    channels: z
+      .array(z.enum(CHANNELS))
+      .min(1, 'ต้องเลือกอย่างน้อย 1 ช่องทาง')
+      .transform((list) => CHANNELS.filter((c) => list.includes(c)))
+      .default([...CHANNELS]),
     config: z.record(z.string(), z.unknown()).default({}),
   })
   .superRefine((q, ctx) => {

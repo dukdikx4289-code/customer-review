@@ -15,37 +15,51 @@ const RANGES = [
   ['all', 'ทั้งหมด'],
 ];
 
+const CHANNELS = [
+  ['', 'ทุกช่องทาง'],
+  ['store', 'หน้าร้าน'],
+  ['online', 'ออนไลน์'],
+];
+
 /**
  * วาด Dashboard ลงใน container
- * opts: { range, branchId, onChange({range, branchId}), showBranchFilter, layoutKey }
+ * opts: { range, branchId, channel, onChange({range?, branchId?, channel?}), showBranchFilter, layoutKey }
  */
 export function renderDashboard(container, data, opts) {
   const { range, branchId, onChange } = opts;
+  const channel = opts.channel ?? '';
   const firstRender = !container.dataset.rendered;
   container.dataset.rendered = '1';
 
   const rangeSeg = h(
     'div',
     { class: 'seg', role: 'group', 'aria-label': 'ช่วงเวลา' },
-    RANGES.map(([value, label]) => h('button', { type: 'button', 'aria-pressed': String(range === value), onclick: () => onChange({ range: value, branchId }) }, label)),
+    RANGES.map(([value, label]) => h('button', { type: 'button', 'aria-pressed': String(range === value), onclick: () => onChange({ range: value, branchId, channel }) }, label)),
   );
 
   let branchSelect = null;
   if (opts.showBranchFilter && data.branchOptions?.length > 1) {
     branchSelect = h(
       'select',
-      { 'aria-label': 'สาขา', onchange: (e) => onChange({ range, branchId: e.target.value ? Number(e.target.value) : null }) },
+      { 'aria-label': 'สาขา', onchange: (e) => onChange({ range, channel, branchId: e.target.value ? Number(e.target.value) : null }) },
       h('option', { value: '' }, 'ทุกสาขา'),
       data.branchOptions.map((b) => h('option', { value: b.id, selected: branchId === b.id }, b.name)),
     );
   }
 
+  const channelSeg = h(
+    'div',
+    { class: 'seg', role: 'group', 'aria-label': 'ช่องทาง' },
+    CHANNELS.map(([value, label]) => h('button', { type: 'button', 'aria-pressed': String(channel === value), onclick: () => onChange({ range, branchId, channel: value }) }, label)),
+  );
+
   const rangeLabel = RANGES.find(([v]) => v === data.range)?.[1] ?? '';
+  const channelLabel = CHANNELS.find(([v]) => v === (data.channel ?? ''))?.[1];
   const head = h(
     'div',
     { class: 'dash-head' },
-    h('div', {}, h('p', { class: 'eyebrow' }, `ผลฟีดแบ็คลูกค้า · ${rangeLabel === 'ทั้งหมด' ? 'ทุกช่วงเวลา' : `${rangeLabel}ล่าสุด`}`), h('h1', { class: 'grad-text' }, data.title || 'ผลฟีดแบ็คลูกค้า'), h('p', { class: 'scope' }, data.scope || '')),
-    h('div', { class: 'filters' }, branchSelect, rangeSeg),
+    h('div', {}, h('p', { class: 'eyebrow' }, `ผลฟีดแบ็คลูกค้า · ${channelLabel} · ${rangeLabel === 'ทั้งหมด' ? 'ทุกช่วงเวลา' : `${rangeLabel}ล่าสุด`}`), h('h1', { class: 'grad-text' }, data.title || 'ผลฟีดแบ็คลูกค้า'), h('p', { class: 'scope' }, data.scope || '')),
+    h('div', { class: 'filters' }, branchSelect, channelSeg, rangeSeg),
   );
   const root = h('div', {}, head);
 

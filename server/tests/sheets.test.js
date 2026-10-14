@@ -14,16 +14,20 @@ test('mergeHeader: ของเดิมอยู่ที่เดิม คำ
   assert.deepEqual(first.slice(-2), ['taste', 'comment']);
   const next = sync.mergeHeader(first, ['comment', 'new_q', 'taste']);
   assert.deepEqual(next, [...first, 'new_q']);
+  // ชีทเดิมที่ยังไม่มีคอลัมน์ channel: เพิ่มต่อท้าย ไม่ย้ายคอลัมน์เดิม
+  const old = ['response_id', 'submitted_at (เวลาไทย)', 'branch_code', 'branch_name', 'link_label', 'taste'];
+  assert.deepEqual(sync.mergeHeader(old, ['taste']), [...old, 'channel']);
 });
 
 test('buildRow: เวลาไทย, คอลัมน์ว่างสำหรับคำถามที่ไม่มีคำตอบ, ไม่แปลงเป็นสูตร', () => {
   const header = sync.mergeHeader([], ['taste', 'comment', 'tags', 'old_q']);
   const row = sync.buildRow(
     header,
-    { id: 7, submitted_at: new Date('2026-10-11T19:30:00Z'), branch_code: 'BKK01', branch_name: 'สยาม', link_label: 'QR โต๊ะ' },
+    { id: 7, submitted_at: new Date('2026-10-11T19:30:00Z'), branch_code: 'BKK01', branch_name: 'สยาม', link_label: 'QR โต๊ะ', channel: 'online' },
     { taste: 5, comment: '=HYPERLINK("http://x")', tags: ['a', 'b'] },
   );
   assert.equal(row[1], '2026-10-12 02:30:00');
+  assert.equal(row[header.indexOf('channel')], 'ออนไลน์');
   assert.equal(row[header.indexOf('taste')], 5);
   assert.equal(row[header.indexOf('comment')], '=HYPERLINK("http://x")'); // ส่งเป็น RAW จึงไม่ถูก execute
   assert.equal(row[header.indexOf('tags')], 'a, b');

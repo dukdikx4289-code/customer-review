@@ -7,7 +7,8 @@ initEffects();
 const app = document.getElementById('app');
 const token = tokenFromPath();
 
-const state = { survey: null, branch: null, questions: [], settings: {}, answers: {}, index: 0, website: '', submitting: false };
+const state = { survey: null, branch: null, channel: null, questions: [], settings: {}, answers: {}, index: 0, website: '', submitting: false };
+const CHANNEL_LABELS = { store: 'หน้าร้าน', online: 'ออนไลน์' };
 
 function notice(title, text) {
   clear(app).append(h('div', { class: 'notice' }, h('h1', {}, title), h('p', { class: 'muted' }, text)));
@@ -16,7 +17,7 @@ function notice(title, text) {
 async function init() {
   try {
     const data = await api(`/r/${encodeURIComponent(token)}`);
-    Object.assign(state, { survey: data.survey, branch: data.branch, questions: data.questions, settings: data.settings ?? {} });
+    Object.assign(state, { survey: data.survey, branch: data.branch, channel: data.channel ?? null, questions: data.questions, settings: data.settings ?? {} });
     document.title = data.survey.title;
     render();
   } catch (err) {
@@ -40,7 +41,7 @@ function header() {
     { class: 'top' },
     logo(),
     h('p', { class: 'eyebrow' }, state.branch ? state.branch.name : state.survey.title),
-    h('p', { class: 'brand' }, state.branch ? state.survey.title : ''),
+    h('p', { class: 'brand' }, [state.branch ? state.survey.title : '', CHANNEL_LABELS[state.channel]].filter(Boolean).join(' · ')),
     h('div', { class: 'progress', role: 'progressbar', 'aria-valuemin': 0, 'aria-valuemax': total, 'aria-valuenow': state.index }, bar),
     h('p', { class: 'step-count' }, `${String(state.index + 1).padStart(2, '0')} / ${String(total).padStart(2, '0')}`),
   );

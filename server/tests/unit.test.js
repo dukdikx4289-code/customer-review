@@ -13,10 +13,11 @@ Object.assign(process.env, {
 });
 
 const tokens = await import('../src/services/tokens.js');
-const { validateAnswers, parseQuestionDefinitions } = await import('../src/services/questions.js');
+const { validateAnswers, parseQuestionDefinitions, questionsForChannel } = await import('../src/services/questions.js');
 const { rangeStart, normalizeRange } = await import('../src/services/aggregate.js');
 const { defaultQuestions } = await import('../src/db/seeds/01_initial.js');
 
+const online = questionsForChannel(defaultQuestions, 'online');
 const link = (over = {}) => ({ public_id: tokens.newPublicId(), kind: 'customer', token_version: 1, ...over });
 
 test('token: สร้างแล้ว parse + verify ผ่าน', () => {
@@ -48,22 +49,39 @@ test('token: รูปแบบผิดถูกปฏิเสธ', () => {
 });
 
 test('คำตอบ: ถูกต้องครบ', () => {
-  const r = validateAnswers(defaultQuestions, { taste: 5, food_quality: '4', delivery_on_time: 3, overall_satisfaction: 5, comment: '  อร่อยมาก  ' });
+  const r = validateAnswers(online, { taste: 5, food_quality: '4', delivery_on_time: 3, packaging: 4, overall_satisfaction: 5, comment: '  อร่อยมาก  ' });
   assert.equal(r.ok, true);
-  assert.equal(r.rows.length, 5);
+  assert.equal(r.rows.length, 6);
   assert.deepEqual(r.rows.find((x) => x.question_key === 'comment'), { question_key: 'comment', value_text: 'อร่อยมาก' });
 });
 
 test('คำตอบ: ขาดข้อบังคับ / ค่านอกช่วง / ไม่ใช่จำนวนเต็ม', () => {
-  const r = validateAnswers(defaultQuestions, { taste: 6, food_quality: 2.5, overall_satisfaction: 'abc' });
+  const r = validateAnswers(online, { taste: 6, food_quality: 2.5, packaging: 5, overall_satisfaction: 'abc' });
   assert.equal(r.ok, false);
   assert.deepEqual(r.errors, { taste: 'invalid', food_quality: 'invalid', delivery_on_time: 'required', overall_satisfaction: 'invalid' });
 });
 
 test('คำตอบ: ข้อไม่บังคับเว้นว่างได้ และ key แปลกปลอมถูกเมิน', () => {
-  const r = validateAnswers(defaultQuestions, { taste: 5, food_quality: 5, delivery_on_time: 5, overall_satisfaction: 5, hacked: 'x' });
+  const r = validateAnswers(online, { taste: 5, food_quality: 5, delivery_on_time: 5, packaging: 5, overall_satisfaction: 5, hacked: 'x' });
   assert.equal(r.ok, true);
-  assert.equal(r.rows.length, 4);
+  assert.equal(r.rows.length, 5);
+});
+
+test('ช่องทาง: หน้าร้าน/ออนไลน์เห็นคำถามต่างกัน, ข้อที่ไม่ระบุช่องทางแสดงทั้งสอง', () => {
+  const keys = (ch) => questionsForChannel(defaultQuestions, ch).map((q) => q.key);
+  assert.deepEqual(keys('store'), ['taste', 'food_quality', 'staff_service', 'cleanliness', 'overall_satisfaction', 'comment']);
+  assert.deepEqual(keys('online'), ['taste', 'food_quality', 'delivery_on_time', 'packaging', 'overall_satisfaction', 'comment']);
+  const legacy = [{ key: 'old_q', type: 'rating', label: 'x', config: {} }];
+  assert.equal(questionsForChannel(legacy, 'store').length, 1);
+  assert.equal(questionsForChannel(legacy, 'online').length, 1);
+  // แอดมินส่งช่องทางสลับลำดับ/ซ้ำ → จัดให้เป็นลำดับมาตรฐาน; ไม่ส่ง = ทั้งสองช่องทาง
+  const [a, b] = parseQuestionDefinitions([
+    { key: 'a1', type: 'rating', label: 'x', channels: ['online', 'store', 'online'] },
+    { key: 'b1', type: 'rating', label: 'y' },
+  ]);
+  assert.deepEqual(a.channels, ['store', 'online']);
+  assert.deepEqual(b.channels, ['store', 'online']);
+  assert.throws(() => parseQuestionDefinitions([{ key: 'c1', type: 'rating', label: 'z', channels: ['phone'] }]));
 });
 
 test('คำตอบ: ตัวเลือกต้องอยู่ในรายการ และข้อความถูกจำกัดความยาว', () => {
@@ -84,7 +102,7 @@ test('นิยามคำถาม: key ซ้ำ / ชนิดผิด / �
   assert.throws(() => parseQuestionDefinitions([...defaultQuestions, defaultQuestions[0]]));
   assert.throws(() => parseQuestionDefinitions([{ key: 'a1', type: 'nope', label: 'x' }]));
   assert.throws(() => parseQuestionDefinitions([{ key: 'a1', type: 'single_choice', label: 'x', config: { options: [{ value: 'a', label: 'A' }] } }]));
-  assert.equal(parseQuestionDefinitions(defaultQuestions).length, 5);
+  assert.equal(parseQuestionDefinitions(defaultQuestions).length, defaultQuestions.length);
 });
 
 test('ช่วงเวลา: เริ่มต้นวันตามเวลาไทย (UTC+7)', () => {

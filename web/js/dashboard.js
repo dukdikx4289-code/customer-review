@@ -7,7 +7,7 @@ initEffects();
 
 const app = document.getElementById('app');
 const token = tokenFromPath();
-const view = { range: '30d', branchId: null };
+const view = { range: '30d', branchId: null, channel: '' };
 let lastData = null;
 
 function message(title, text) {
@@ -18,6 +18,7 @@ async function load() {
   try {
     const q = new URLSearchParams({ range: view.range });
     if (view.branchId) q.set('branch_id', view.branchId);
+    if (view.channel) q.set('channel', view.channel);
     lastData = await api(`/d/${encodeURIComponent(token)}/stats?${q}`);
     draw();
   } catch (err) {

@@ -15,7 +15,7 @@
 
 /* ---------- 1) หัวเรื่องไล่สี + จุดกระพริบ ---------- */
 .grad-text {
-  background-image: linear-gradient(270deg, var(--accent), var(--sage), var(--text), var(--accent));
+  background-image: linear-gradient(270deg, var(--primary), var(--accent), var(--text), var(--primary));
   background-size: 300% 100%;
   -webkit-background-clip: text; background-clip: text;
   color: transparent; -webkit-text-fill-color: transparent;

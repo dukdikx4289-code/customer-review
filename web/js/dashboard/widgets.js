@@ -15,6 +15,8 @@ import { h, formatDay, formatDateTime, formatNumber, formatPercent } from '../ut
 import { big, delta, rows, bars, spark, level } from './ui.js';
 
 const DAY_NAMES = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
+const CHANNEL_LABELS = { store: 'หน้าร้าน', online: 'ออนไลน์' };
+const channelTag = (c) => (CHANNEL_LABELS[c.channel] ? h('span', { class: 'ch-tag' }, CHANNEL_LABELS[c.channel]) : null);
 const dayName = (date) => DAY_NAMES[new Date(`${date}T00:00:00Z`).getUTCDay()];
 
 /** จำนวนรีวิว + minimap ความหนาแน่น 7 วัน x 24 ชั่วโมง */
@@ -140,7 +142,7 @@ function commentsExpanded(data) {
     const items = data.comments.filter((c) => match[current](c.score));
     const bar = h('div', { class: 'seg', role: 'group', 'aria-label': 'กรองตามคะแนน' }, Object.entries(filters).map(([key, label]) => h('button', { type: 'button', 'aria-pressed': String(key === current), onclick: () => ((current = key), draw()) }, label)));
     const list = h('ul', { class: 'clist full' });
-    for (const c of items) list.append(h('li', {}, h('div', { class: 'meta' }, c.branch ? h('b', {}, c.branch) : null, h('span', {}, formatDateTime(c.submittedAt)), c.score != null ? h('span', { class: 'stars-inline', 'aria-label': `${c.score} คะแนน` }, '★'.repeat(Math.round(c.score))) : null), h('p', { class: 'text' }, c.text)));
+    for (const c of items) list.append(h('li', {}, h('div', { class: 'meta' }, c.branch ? h('b', {}, c.branch) : null, channelTag(c), h('span', {}, formatDateTime(c.submittedAt)), c.score != null ? h('span', { class: 'stars-inline', 'aria-label': `${c.score} คะแนน` }, '★'.repeat(Math.round(c.score))) : null), h('p', { class: 'text' }, c.text)));
     holder.replaceChildren(bar, items.length ? list : h('p', { class: 'muted' }, 'ไม่มีข้อเสนอแนะในกลุ่มนี้'));
   }
   draw();
@@ -181,40 +183,56 @@ function distBar(q) {
   return bar;
 }
 
-function distribution(data) {
-  const qs = data.questions.filter((q) => q.distribution?.length);
-  const list = h('div', { class: 'dist', role: 'list', 'aria-label': 'การกระจายคะแนนรายหัวข้อ' });
-  for (const q of qs) {
-    list.append(h('div', { role: 'listitem' }, h('div', { class: 'dist-head' }, h('span', { class: 'n', title: q.label }, q.label), h('span', { class: 'v' }, `เฉลี่ย ${formatNumber(q.avg)} · ${formatNumber(distTotal(q), 0)} คน`)), distBar(q)));
+/** กลุ่มตามช่องทาง (หน้าร้าน / ออนไลน์) — API เก่าที่ยังไม่มี distributionByChannel แสดงเป็นกลุ่มเดียว */
+const distGroups = (data) =>
+  (data.distributionByChannel ?? [{ channel: 'all', label: '', questions: data.questions }]).map((g) => ({ ...g, questions: g.questions.filter((q) => q.distribution?.length) }));
+
+const groupTotal = (g) => Math.max(0, ...g.questions.map(distTotal));
+
+function distList(g, { brief = true } = {}) {
+  const list = h('div', { class: 'dist', role: 'list', 'aria-label': `การกระจายคะแนน ${g.label}`.trim() });
+  for (const q of g.questions) {
+    list.append(h('div', { role: 'listitem' }, h('div', { class: 'dist-head' }, h('span', { class: 'n', title: q.label }, q.label), h('span', { class: 'v' }, brief ? `เฉลี่ย ${formatNumber(q.avg)}` : `เฉลี่ย ${formatNumber(q.avg)} · ${formatNumber(distTotal(q), 0)} คน`)), distBar(q)));
   }
-  return { meta: distLegend(data.primary?.min, data.primary?.max), body: qs.length ? h('div', { class: 'push' }, list) : h('p', { class: 'empty-note' }, 'ยังไม่มีคะแนน') };
+  return list;
 }
 
-/** มุมมองขยาย: ตารางจำนวนคนต่อดาวของทุกหัวข้อ (ตัวเลขจริง + %) */
+function distGroup(g, opts) {
+  const head = g.label ? h('div', { class: 'dist-group-head' }, h('b', {}, g.label), h('span', {}, `${formatNumber(groupTotal(g), 0)} คน`)) : null;
+  const body = groupTotal(g) ? distList(g, opts) : h('p', { class: 'empty-note' }, 'ยังไม่มีรีวิวจากช่องทางนี้');
+  return h('section', { class: 'dist-group' }, head, body);
+}
+
+function distribution(data) {
+  const groups = distGroups(data);
+  return { meta: distLegend(data.primary?.min, data.primary?.max), body: h('div', { class: 'push dist-groups' }, groups.map((g) => distGroup(g))) };
+}
+
+/** มุมมองขยาย: แถบสี + ตารางจำนวนคนต่อดาว (ตัวเลขจริง + %) แยกตามช่องทาง */
 function distributionExpanded(data) {
-  const qs = data.questions.filter((q) => q.distribution?.length);
   const lo = data.primary?.min ?? 1;
   const hi = data.primary?.max ?? 5;
   const scores = Array.from({ length: hi - lo + 1 }, (_, i) => hi - i);
-  const table = h(
-    'div',
-    { class: 'table-wrap' },
+  const table = (g) =>
     h(
-      'table',
-      { class: 'dist-table' },
-      h('thead', {}, h('tr', {}, h('th', {}, 'หัวข้อ'), scores.map((s) => h('th', { class: 'num' }, h('span', { class: `dist-chip ${scoreClass(s, lo, hi)}`, 'aria-hidden': 'true' }), `${s}★`)), h('th', { class: 'num' }, 'รวม'), h('th', { class: 'num' }, 'เฉลี่ย'))),
+      'div',
+      { class: 'table-wrap' },
       h(
-        'tbody',
-        {},
-        qs.map((q) => {
-          const total = distTotal(q);
-          const count = (s) => q.distribution.find((d) => d.score === s)?.count ?? 0;
-          return h('tr', {}, h('td', {}, h('b', {}, q.label)), scores.map((s) => h('td', { class: 'num' }, formatNumber(count(s), 0), h('small', {}, `${pct(count(s), total)}%`))), h('td', { class: 'num' }, formatNumber(total, 0)), h('td', { class: 'num' }, formatNumber(q.avg)));
-        }),
+        'table',
+        { class: 'dist-table' },
+        h('thead', {}, h('tr', {}, h('th', {}, 'หัวข้อ'), scores.map((s) => h('th', { class: 'num' }, h('span', { class: `dist-chip ${scoreClass(s, lo, hi)}`, 'aria-hidden': 'true' }), `${s}★`)), h('th', { class: 'num' }, 'รวม'), h('th', { class: 'num' }, 'เฉลี่ย'))),
+        h(
+          'tbody',
+          {},
+          g.questions.map((q) => {
+            const total = distTotal(q);
+            const count = (s) => q.distribution.find((d) => d.score === s)?.count ?? 0;
+            return h('tr', {}, h('td', {}, h('b', {}, q.label)), scores.map((s) => h('td', { class: 'num' }, formatNumber(count(s), 0), h('small', {}, `${pct(count(s), total)}%`))), h('td', { class: 'num' }, formatNumber(total, 0)), h('td', { class: 'num' }, formatNumber(q.avg)));
+          }),
+        ),
       ),
-    ),
-  );
-  return { body: h('div', { class: 'stack' }, distLegend(lo, hi), h('div', { class: 'dist' }, qs.map((q) => h('div', {}, h('div', { class: 'dist-head' }, h('span', { class: 'n' }, q.label), h('span', { class: 'v' }, `${formatNumber(distTotal(q), 0)} คน`)), distBar(q)))), table) };
+    );
+  return { body: h('div', { class: 'stack' }, distLegend(lo, hi), distGroups(data).map((g) => h('div', { class: 'stack' }, distGroup(g, { brief: false }), groupTotal(g) ? table(g) : null))) };
 }
 
 /** จุดที่ต้องแก้ไข (หัวข้อ x สาขาที่เฉลี่ยต่ำกว่าเกณฑ์) */
@@ -233,7 +251,7 @@ function attention(data) {
 function comments(data) {
   const list = h('ul', { class: 'clist', 'aria-label': 'ข้อเสนอแนะล่าสุด' });
   for (const c of data.comments.slice(0, 12)) {
-    list.append(h('li', {}, h('div', { class: 'meta' }, c.branch ? h('b', {}, c.branch) : null, h('span', {}, formatDateTime(c.submittedAt)), c.score != null ? h('span', { class: 'stars-inline', 'aria-label': `${c.score} คะแนน` }, '★'.repeat(Math.round(c.score))) : null), h('p', { class: 'text' }, c.text)));
+    list.append(h('li', {}, h('div', { class: 'meta' }, c.branch ? h('b', {}, c.branch) : null, channelTag(c), h('span', {}, formatDateTime(c.submittedAt)), c.score != null ? h('span', { class: 'stars-inline', 'aria-label': `${c.score} คะแนน` }, '★'.repeat(Math.round(c.score))) : null), h('p', { class: 'text' }, c.text)));
   }
   return { meta: `${data.comments.length} ล่าสุด`, body: data.comments.length ? list : h('p', { class: 'empty-note' }, 'ยังไม่มีข้อเสนอแนะเป็นข้อความ') };
 }
@@ -245,7 +263,7 @@ export const WIDGETS = [
   { id: 'average', size: 'sm', title: 'คะแนนเฉลี่ย', render: average },
   { id: 'branches', size: 'lg', title: 'เปรียบเทียบสาขา', render: branches, expanded: branchesExpanded },
   { id: 'questions', size: 'wide', title: 'คะแนนรายหัวข้อ', render: questions },
-  { id: 'distribution', size: 'wide', title: 'การกระจายคะแนนรายหัวข้อ', render: distribution, expanded: distributionExpanded },
+  { id: 'distribution', size: 'lg', title: 'การกระจายคะแนนรายหัวข้อ', render: distribution, expanded: distributionExpanded },
   { id: 'comments', size: 'lg', title: 'ข้อเสนอแนะล่าสุด', render: comments, expanded: commentsExpanded },
   { id: 'attention', size: 'wide', title: 'จุดที่ต้องแก้ไข', render: attention },
 ];

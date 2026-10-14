@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db } from '../db/knex.js';
 import { resolveLink, getLatestVersion } from '../services/links.js';
-import { validateAnswers } from '../services/questions.js';
+import { validateAnswers, questionsForChannel, normalizeChannel } from '../services/questions.js';
 import { badTokenLimiter, submitLimiter } from '../middleware/rateLimit.js';
 
 export const publicRouter = Router();
@@ -21,7 +21,9 @@ async function loadContext(token) {
   const version = await getLatestVersion(survey.id);
   if (!version) return null;
 
-  return { link, branch, survey, version };
+  // ลิงก์ลูกค้าผูกช่องทาง (หน้าร้าน/ออนไลน์) — ลูกค้าเห็นเฉพาะคำถามของช่องทางนั้น
+  const channel = normalizeChannel(link.channel) ?? 'store';
+  return { link, branch, survey, version, channel, questions: questionsForChannel(version.questions, channel) };
 }
 
 // ข้อมูลที่ฟอร์มลูกค้าต้องใช้ — ไม่ส่ง id ภายในออกไป
@@ -32,7 +34,8 @@ publicRouter.get('/r/:token', badTokenLimiter, async (req, res) => {
   res.json({
     survey: { title: ctx.survey.title },
     branch: ctx.branch ? { name: ctx.branch.name } : null,
-    questions: ctx.version.questions,
+    channel: ctx.channel,
+    questions: ctx.questions.map(({ channels, ...q }) => q),
     settings: ctx.version.settings,
   });
 });
@@ -48,7 +51,7 @@ publicRouter.post('/r/:token/submit', badTokenLimiter, submitLimiter, async (req
     return res.status(201).json({ ok: true });
   }
 
-  const result = validateAnswers(ctx.version.questions, body.answers);
+  const result = validateAnswers(ctx.questions, body.answers);
   if (!result.ok) return res.status(422).json({ error: 'invalid_answers', fields: result.errors });
   if (result.rows.length === 0) return res.status(422).json({ error: 'empty_submission' });
 
@@ -64,6 +67,7 @@ publicRouter.post('/r/:token/submit', badTokenLimiter, submitLimiter, async (req
       version_id: ctx.version.id,
       branch_id: ctx.branch?.id ?? null,
       link_id: ctx.link.id,
+      channel: ctx.channel,
       meta: JSON.stringify(meta),
     });
     await trx('answers').insert(result.rows.map((row) => ({ response_id: responseId, ...row })));

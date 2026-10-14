@@ -11,13 +11,16 @@ await import('./helpers/localOnly.js');
 const { createApp } = await import('../src/app.js');
 const { db } = await import('../src/db/knex.js');
 const { defaultQuestions } = await import('../src/db/seeds/01_initial.js');
+const { questionsForChannel } = await import('../src/services/questions.js');
+const onlineKeys = questionsForChannel(defaultQuestions, 'online').map((q) => q.key);
+const storeKeys = questionsForChannel(defaultQuestions, 'store').map((q) => q.key);
 
 const app = createApp();
 const admin = request.agent(app);
 const suffix = Date.now().toString(36);
 const username = `test_${suffix}`;
 const password = 'correct-horse-battery';
-const state = {};
+const state = { versions: [] };
 
 const tokenOf = (url) => url.split('/').pop();
 
@@ -34,9 +37,9 @@ after(async () => {
     await db('branches').where({ id: state.branchId }).del();
   }
   await db('share_links').where({ label: `dash ${suffix}` }).del();
-  // ลบเวอร์ชันที่เทสต์สร้างเพิ่ม (version_no > 1) ถ้าไม่มี response อ้างอิง
+  // ลบเฉพาะเวอร์ชันที่เทสต์นี้เผยแพร่ ถ้าไม่มี response อ้างอิง (ไม่แตะเวอร์ชันจริงจาก seed/migration)
   const used = await db('responses').pluck('version_id');
-  await db('survey_versions').where({ survey_id: survey.id }).where('version_no', '>', 1).whereNotIn('id', used.length ? used : [0]).del();
+  if (state.versions.length) await db('survey_versions').where({ survey_id: survey.id }).whereIn('version_no', state.versions).whereNotIn('id', used.length ? used : [0]).del();
   await db('admin_users').where({ username }).del();
   await db.destroy();
 });
@@ -62,18 +65,26 @@ test('สร้างสาขา + ลิงก์ลูกค้า + ลิ�
   state.branchId = b.body.id;
   assert.equal((await admin.post('/api/admin/branches').send({ code: b.body.code, name: 'ซ้ำ' })).status, 409);
 
-  const c = await admin.post('/api/admin/links').send({ kind: 'customer', branchId: state.branchId, label: `qr ${suffix}` });
+  const c = await admin.post('/api/admin/links').send({ kind: 'customer', channel: 'online', branchId: state.branchId, label: `qr ${suffix}` });
   assert.equal(c.status, 201);
+  assert.equal(c.body.channel, 'online');
   state.customer = c.body;
   state.customerToken = tokenOf(c.body.url);
   assert.match(c.body.url, /\/r\/[0-9A-Za-z]{12}\.[A-Za-z0-9_-]{22}$/);
+
+  const s = await admin.post('/api/admin/links').send({ kind: 'customer', channel: 'store', branchId: state.branchId, label: `store ${suffix}` });
+  assert.equal(s.status, 201);
+  state.storeToken = tokenOf(s.body.url);
+
+  const noChannel = await admin.post('/api/admin/links').send({ kind: 'customer', branchId: state.branchId, label: 'x' });
+  assert.equal(noChannel.status, 422);
 
   const d = await admin.post('/api/admin/links').send({ kind: 'dashboard', label: `dash ${suffix}` });
   assert.equal(d.status, 201);
   state.dashboardToken = tokenOf(d.body.url);
   assert.match(d.body.url, /\/d\/[0-9A-Za-z]{12}\.[A-Za-z0-9_-]{43}$/);
 
-  const noBranch = await admin.post('/api/admin/links').send({ kind: 'customer', label: 'x' });
+  const noBranch = await admin.post('/api/admin/links').send({ kind: 'customer', channel: 'store', label: 'x' });
   assert.equal(noBranch.status, 422);
 });
 
@@ -93,8 +104,16 @@ test('ฟอร์มลูกค้า: โหลดคำถามตามส
   const ok = await request(app).get(`/api/r/${state.customerToken}`);
   assert.equal(ok.status, 200);
   assert.equal(ok.body.branch.name, 'สาขาทดสอบ 😀');
-  assert.deepEqual(ok.body.questions.map((q) => q.key).slice(0, 5), defaultQuestions.map((q) => q.key));
+  assert.equal(ok.body.channel, 'online');
+  assert.deepEqual(ok.body.questions.map((q) => q.key), onlineKeys);
   assert.equal('id' in ok.body, false);
+  assert.equal('channels' in ok.body.questions[0], false);
+
+  // ลิงก์หน้าร้านเห็นคำถามชุดหน้าร้าน (ไม่มีเรื่องจัดส่ง)
+  const store = await request(app).get(`/api/r/${state.storeToken}`);
+  assert.equal(store.body.channel, 'store');
+  assert.deepEqual(store.body.questions.map((q) => q.key), storeKeys);
+  assert.equal(storeKeys.includes('delivery_on_time'), false);
 
   const [pid, sig] = state.customerToken.split('.');
   const bads = [`${pid}.${sig.slice(0, -1)}${sig.endsWith('A') ? 'B' : 'A'}`, `${'z'.repeat(12)}.${sig}`, 'garbage', `${pid}.${sig}.x`, state.dashboardToken];
@@ -110,9 +129,9 @@ test('ฟอร์มลูกค้า: โหลดคำถามตามส
 test('ส่งคำตอบ: ไม่ครบ 422, ครบ 201, honeypot ไม่บันทึก', async () => {
   const path = `/api/r/${state.customerToken}/submit`;
   assert.equal((await request(app).post(path).send({ answers: { taste: 5 } })).status, 422);
-  assert.equal((await request(app).post(path).send({ answers: { taste: 9, food_quality: 5, delivery_on_time: 5, overall_satisfaction: 5 } })).status, 422);
-
-  const good = { taste: 5, food_quality: 4, delivery_on_time: 2, overall_satisfaction: 4, comment: 'อร่อย <script>alert(1)</script> =SUM(1)' };
+  assert.equal((await request(app).post(path).send({ answers: { taste: 9, food_quality: 5, delivery_on_time: 5, packaging: 5, overall_satisfaction: 5 } })).status, 422);
+  // ช่องทางออนไลน์ไม่ถามเรื่องพนักงาน: ส่งมาก็ไม่บันทึก (ไม่ทำให้ฟอร์มพัง)
+  const good = { taste: 5, food_quality: 4, delivery_on_time: 2, packaging: 3, overall_satisfaction: 4, staff_service: 1, comment: 'อร่อย <script>alert(1)</script> =SUM(1)' };
   const res = await request(app).post(path).send({ answers: good });
   assert.equal(res.status, 201);
 
@@ -124,7 +143,9 @@ test('ส่งคำตอบ: ไม่ครบ 422, ครบ 201, honeypot 
 
   const response = await db('responses').where({ branch_id: state.branchId }).first();
   const answers = await db('answers').where({ response_id: response.id });
-  assert.equal(answers.length, 5);
+  assert.equal(answers.length, 6);
+  assert.equal(answers.some((a) => a.question_key === 'staff_service'), false);
+  assert.equal(response.channel, 'online');
   assert.ok(await db('sheet_outbox').where({ response_id: response.id, status: 'pending' }).first());
   assert.equal(answers.find((a) => a.question_key === 'comment').value_text, good.comment); // เก็บดิบ ไม่ตัดทอน (escape ตอนแสดงผล)
   const meta = typeof response.meta === 'string' ? JSON.parse(response.meta) : response.meta;
@@ -149,6 +170,16 @@ test('Dashboard ผู้บริหาร: เห็นข้อมูลร�
   assert.ok(res.body.questions.every((q) => q.distribution.length === 5));
   assert.ok(dist.taste.find((d) => d.score === 5).count >= 1);
   assert.ok(dist.delivery_on_time.find((d) => d.score === 2).count >= 1);
+  // แยกตามช่องทาง: หน้าร้านไม่มีหัวข้อจัดส่ง, ออนไลน์นับรีวิวทดสอบ
+  const byCh = Object.fromEntries(res.body.distributionByChannel.map((g) => [g.channel, g.questions]));
+  assert.deepEqual(Object.keys(byCh), ['store', 'online']);
+  assert.equal(byCh.store.some((q) => q.key === 'delivery_on_time'), false);
+  assert.ok(byCh.online.find((q) => q.key === 'delivery_on_time').distribution.find((d) => d.score === 2).count >= 1);
+  // กรองช่องทาง: หน้าร้านของสาขานี้ยังไม่มีรีวิว
+  const storeOnly = await request(app).get(`/api/d/${state.dashboardToken}/stats?range=all&channel=store&branch_id=${state.branchId}`);
+  assert.equal(storeOnly.body.channel, 'store');
+  assert.equal(storeOnly.body.totals.responses, 0);
+  assert.deepEqual(storeOnly.body.distributionByChannel.map((g) => g.channel), ['store']);
   // ข้อมูลสำหรับ widget: minimap 7 วัน x 24 ชั่วโมง และช่วงก่อนหน้า (all = ไม่มี)
   assert.equal(res.body.activity.length, 7);
   assert.ok(res.body.activity.every((d) => d.hours.length === 24));
@@ -176,6 +207,13 @@ test('เผยแพร่คำถามเวอร์ชันใหม่: 
   const pub = await admin.post('/api/admin/survey/publish').send({ questions });
   assert.equal(pub.status, 201);
   assert.equal(pub.body.version, current.body.version + 1);
+  state.versions.push(pub.body.version);
+  // ไม่ระบุช่องทาง = ทั้งสองช่องทาง, ช่องทางเดิมของข้ออื่นคงอยู่
+  const latest = await admin.get('/api/admin/survey');
+  assert.deepEqual(latest.body.questions.at(-1).channels, ['store', 'online']);
+  assert.deepEqual(latest.body.questions.find((q) => q.key === 'delivery_on_time').channels, ['online']);
+  const emptyChannels = await admin.post('/api/admin/survey/publish').send({ questions: [{ ...questions[0], channels: [] }] });
+  assert.equal(emptyChannels.status, 422);
 
   const form = await request(app).get(`/api/r/${state.customerToken}`);
   assert.equal(form.body.questions.at(-1).key, 'would_return');
@@ -183,7 +221,7 @@ test('เผยแพร่คำถามเวอร์ชันใหม่: 
   const bad = await admin.post('/api/admin/survey/publish').send({ questions: [...questions, questions[0]] });
   assert.equal(bad.status, 422);
 
-  const res = await request(app).post(`/api/r/${state.customerToken}/submit`).send({ answers: { taste: 4, food_quality: 4, delivery_on_time: 4, overall_satisfaction: 4, would_return: 'yes' } });
+  const res = await request(app).post(`/api/r/${state.customerToken}/submit`).send({ answers: { taste: 4, food_quality: 4, delivery_on_time: 4, packaging: 4, overall_satisfaction: 4, would_return: 'yes' } });
   assert.equal(res.status, 201);
   const stats = await admin.get(`/api/admin/stats?range=all&branch_id=${state.branchId}`);
   assert.equal(stats.body.totals.responses, 2);

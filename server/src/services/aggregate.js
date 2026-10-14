@@ -1,6 +1,7 @@
 import { db } from '../db/knex.js';
 import { config } from '../config.js';
 import { getLatestVersion } from './links.js';
+import { CHANNELS, CHANNEL_LABELS, inChannel } from './questions.js';
 
 const BKK_OFFSET_MS = 7 * 60 * 60 * 1000;
 const RANGES = { '7d': 7, '30d': 30, '90d': 90, all: null };
@@ -23,9 +24,10 @@ export function rangeStart(range, now = new Date()) {
 const num = (v) => (v == null ? null : Number(v));
 const round = (v, d = 2) => (v == null ? null : Math.round(v * 10 ** d) / 10 ** d);
 
-function applyFilters(query, { surveyId, branchId, from, to }) {
+function applyFilters(query, { surveyId, branchId, channel, from, to }) {
   query.where('r.survey_id', surveyId);
   if (branchId) query.where('r.branch_id', branchId);
+  if (channel) query.where('r.channel', channel);
   if (from) query.where('r.submitted_at', '>=', from);
   if (to) query.where('r.submitted_at', '<', to);
   return query;
@@ -50,13 +52,15 @@ async function periodTotals(filters, primary) {
 
 const bkkDate = (date) => new Date(date.getTime() + BKK_OFFSET_MS).toISOString().slice(0, 10);
 
-async function computeStats({ surveyId, branchId, range }) {
+async function computeStats({ surveyId, branchId, channel = null, range }) {
   const version = await getLatestVersion(surveyId);
-  const questions = version?.questions ?? [];
+  // กรองช่องทาง: เห็นเฉพาะคำถามของช่องทางนั้น (ข้อที่ใช้ทั้งสองช่องทางรวมอยู่ด้วย)
+  const questions = (version?.questions ?? []).filter((q) => !channel || inChannel(q, channel));
   const ratingQs = questions.filter((q) => q.type === 'rating');
   const textQs = questions.filter((q) => q.type === 'long_text' || q.type === 'short_text');
   const primary = ratingQs.find((q) => q.key === 'overall_satisfaction') ?? ratingQs.at(-1) ?? null;
-  const filters = { surveyId, branchId, from: rangeStart(range) };
+  const filters = { surveyId, branchId, channel, from: rangeStart(range) };
+  const channels = channel ? [channel] : CHANNELS;
 
   const base = () =>
     applyFilters(db('answers as a').join('responses as r', 'r.id', 'a.response_id'), filters);
@@ -85,21 +89,32 @@ async function computeStats({ surveyId, branchId, range }) {
   const distribution = [];
   for (let s = min; s <= max; s++) distribution.push({ score: s, count: distMap.get(s) ?? 0 });
 
-  // การกระจายคะแนนของทุกหัวข้อแบบให้คะแนน (จำนวนคนที่ให้แต่ละดาว) — ใช้กับกราฟรายหัวข้อบน Dashboard
+  // การกระจายคะแนนของทุกหัวข้อแบบให้คะแนน (จำนวนคนที่ให้แต่ละดาว) แยกตามช่องทาง — ใช้กับกราฟรายหัวข้อบน Dashboard
   const qDistRows = ratingQs.length
     ? await base()
         .whereIn('a.question_key', ratingQs.map((q) => q.key))
         .whereNotNull('a.value_number')
-        .groupBy('a.question_key', 'a.value_number')
-        .select('a.question_key', 'a.value_number as score')
+        .groupBy('r.channel', 'a.question_key', 'a.value_number')
+        .select('r.channel', 'a.question_key', 'a.value_number as score')
         .count({ n: '*' })
     : [];
-  const qDistMap = new Map(qDistRows.map((r) => [`${r.question_key}|${Number(r.score)}`, Number(r.n)]));
-  const questionDistribution = (q) => {
+  const qDistMap = new Map();
+  for (const r of qDistRows) {
+    for (const key of [`${r.channel}|${r.question_key}|${Number(r.score)}`, `*|${r.question_key}|${Number(r.score)}`]) {
+      qDistMap.set(key, (qDistMap.get(key) ?? 0) + Number(r.n));
+    }
+  }
+  const questionDistribution = (q, ch = '*') => {
     const lo = q.config?.min ?? 1;
     const hi = q.config?.max ?? 5;
-    return Array.from({ length: hi - lo + 1 }, (_, i) => ({ score: lo + i, count: qDistMap.get(`${q.key}|${lo + i}`) ?? 0 }));
+    return Array.from({ length: hi - lo + 1 }, (_, i) => ({ score: lo + i, count: qDistMap.get(`${ch}|${q.key}|${lo + i}`) ?? 0 }));
   };
+  const distSummary = (q, ch) => {
+    const dist = questionDistribution(q, ch);
+    const n = dist.reduce((a, d) => a + d.count, 0);
+    return { key: q.key, label: q.label, min: q.config?.min ?? 1, max: q.config?.max ?? 5, n, avg: n ? round(dist.reduce((a, d) => a + d.score * d.count, 0) / n) : null, distribution: dist };
+  };
+  const distributionByChannel = channels.map((ch) => ({ channel: ch, label: CHANNEL_LABELS[ch], questions: ratingQs.filter((q) => inChannel(q, ch)).map((q) => distSummary(q, ch)) }));
 
   const ratedTotal = distribution.reduce((a, d) => a + d.count, 0);
   const satisfied = distribution.filter((d) => d.score >= max - 1).reduce((a, d) => a + d.count, 0);
@@ -121,12 +136,12 @@ async function computeStats({ surveyId, branchId, range }) {
   const rangeDays = RANGES[normalizeRange(range)];
   const previous =
     rangeDays && filters.from
-      ? await periodTotals({ surveyId, branchId, from: new Date(filters.from.getTime() - rangeDays * 86_400_000), to: filters.from }, primary)
+      ? await periodTotals({ surveyId, branchId, channel, from: new Date(filters.from.getTime() - rangeDays * 86_400_000), to: filters.from }, primary)
       : null;
 
   // ความหนาแน่นของรีวิว 7 วันล่าสุด x 24 ชั่วโมง (เวลาไทย) สำหรับ minimap
   const activityFrom = rangeStart('7d');
-  const activityRows = await applyFilters(db('responses as r'), { surveyId, branchId, from: activityFrom })
+  const activityRows = await applyFilters(db('responses as r'), { surveyId, branchId, channel, from: activityFrom })
     .select(
       db.raw("DATE(CONVERT_TZ(r.submitted_at, '+00:00', '+07:00')) as day"),
       db.raw("HOUR(CONVERT_TZ(r.submitted_at, '+00:00', '+07:00')) as hour"),
@@ -180,7 +195,7 @@ async function computeStats({ surveyId, branchId, range }) {
       .whereNotNull('a.value_text')
       .orderBy('r.submitted_at', 'desc')
       .limit(20)
-      .select('r.id as response_id', 'r.submitted_at', 'r.branch_id', 'a.question_key', 'a.value_text');
+      .select('r.id as response_id', 'r.submitted_at', 'r.branch_id', 'r.channel', 'a.question_key', 'a.value_text');
     const scores = primary && rows.length
       ? await db('answers').whereIn('response_id', rows.map((r) => r.response_id)).where({ question_key: primary.key }).select('response_id', 'value_number')
       : [];
@@ -191,6 +206,7 @@ async function computeStats({ surveyId, branchId, range }) {
       id: r.response_id,
       submittedAt: new Date(r.submitted_at).toISOString(),
       branch: branchMap.get(r.branch_id) ?? null,
+      channel: r.channel,
       question: labelMap.get(r.question_key),
       score: scoreMap.get(r.response_id) ?? null,
       text: r.value_text,
@@ -199,6 +215,7 @@ async function computeStats({ surveyId, branchId, range }) {
 
   return {
     range: normalizeRange(range),
+    channel,
     generatedAt: new Date().toISOString(),
     totals: {
       responses: Number(totalResponses),
@@ -218,6 +235,7 @@ async function computeStats({ surveyId, branchId, range }) {
       distribution: questionDistribution(q),
     })),
     distribution,
+    distributionByChannel,
     trend: trendRows.map((r) => ({
       date: typeof r.day === 'string' ? r.day.slice(0, 10) : new Date(r.day).toISOString().slice(0, 10),
       count: Number(r.n),
@@ -236,7 +254,7 @@ const CACHE_MAX = 200;
 
 export async function getStats(params, { ttlSec = config.DASHBOARD_CACHE_TTL_SEC } = {}) {
   const range = normalizeRange(params.range);
-  const key = `${params.surveyId}|${params.branchId ?? ''}|${range}`;
+  const key = `${params.surveyId}|${params.branchId ?? ''}|${params.channel ?? ''}|${range}`;
   const hit = cache.get(key);
   if (ttlSec > 0 && hit && hit.expires > Date.now()) return hit.value;
 

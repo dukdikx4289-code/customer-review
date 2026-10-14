@@ -1,29 +1,29 @@
-/* ระบบดีไซน์: editorial อบอุ่น (กระดาษ + เขียวหมึก + terracotta) — แก้สี/ฟอนต์/มุมโค้งที่ตัวแปรใน :root ที่เดียว
- * mobile-first (breakpoint 600 / 900 / 1200) | ลูกเล่นอยู่ที่ css/effects.css | ฟอนต์ที่ css/fonts.css */
+/* ระบบดีไซน์: โทนขาวสะอาด + เขียวจากโลโก้แบรนด์ (เขียวเข้ม #15673a / เขียวอ่อน #84c43a) — แก้สี/ฟอนต์/มุมโค้งที่ตัวแปรใน :root ที่เดียว
+ * ใช้โหมดสว่างอย่างเดียว (พื้นขาวเสมอ ตามแบรนด์) | mobile-first (breakpoint 600 / 900 / 1200) | ลูกเล่นอยู่ที่ css/effects.css | ฟอนต์ที่ css/fonts.css */
 :root {
   color-scheme: light;
-  --bg: #faf7f2;
+  --bg: #ffffff;
   --surface: #ffffff;
-  --surface-2: #f0eae1;
-  --text: #2c3e30;
-  --text-2: #5c6a5a;
-  --text-3: #62705f;
-  --border: rgb(44 62 48 / 12%);
-  --primary: #2c3e30;
-  --primary-hover: #1f2d23;
-  --primary-ink: #faf7f2;
-  --accent: #c86b53;
-  --accent-ink: #b05842; /* ใช้กับข้อความเล็ก (ผ่าน 4.5:1) — --accent ใช้กับตัวใหญ่/ไอคอน/เส้น */
-  --accent-soft: #f2e3df;
-  --sage: #73876b;
-  --series-1: #3b6a4c;
+  --surface-2: #f2f6f1;
+  --text: #1c2a21;
+  --text-2: #4d5b52;
+  --text-3: #5a675e;
+  --border: rgb(28 42 33 / 12%);
+  --primary: #15673a;
+  --primary-hover: #0f5230;
+  --primary-ink: #ffffff;
+  --accent: #2e8b43;
+  --accent-ink: #1a6b37; /* ใช้กับข้อความเล็ก (ผ่าน 4.5:1 บนพื้นขาว) — --accent ใช้กับตัวใหญ่/ไอคอน/เส้น */
+  --accent-soft: #e9f5e4;
+  --sage: #84c43a;
+  --series-1: #2e8b43;
   --on-strong: #ffffff;
-  --star: #c86b53;
-  --star-off: #62705f;
-  --good: #2f7d3c;
-  --danger: #b3402f;
-  --danger-bg: #fbece8;
-  --warn-bg: #fff1dd;
+  --star: #2e8b43;
+  --star-off: #6b776f;
+  --good: #1f7a36;
+  --danger: #b3342a;
+  --danger-bg: #fdecea;
+  --warn-bg: #fff4dc;
   --warn-ink: #7a4a00;
   /* สีระดับคะแนน 5★ เขียว → 1★ แดง (กราฟการกระจายคะแนน) ใช้ได้ทั้งโหมดสว่าง/มืด
      ตัวเลขบนแถบ: 5★/1★ ใช้ --score-ink-light, 4★–2★ ใช้ --score-ink-dark (ผ่าน 4.5:1 ทุกสี) */
@@ -37,43 +37,12 @@
   --radius: 20px;
   --radius-sm: 12px;
   --widget-radius: 24px;
-  --shadow: 0 1px 2px rgb(44 62 48 / 5%), 0 12px 32px rgb(44 62 48 / 6%);
-  --shadow-lift: 0 18px 40px rgb(44 62 48 / 12%);
+  --shadow: 0 1px 2px rgb(16 40 24 / 6%), 0 8px 24px rgb(16 40 24 / 6%);
+  --shadow-lift: 0 16px 36px rgb(16 40 24 / 12%);
   --gutter: 16px;
   --font: "Inter", "Noto Sans Thai", system-ui, -apple-system, "Segoe UI", Roboto, Tahoma, sans-serif;
   --font-serif: "Fraunces", "Noto Serif Thai", Georgia, "Times New Roman", serif;
   --font-mono: "JetBrains Mono", "Noto Sans Thai", ui-monospace, Menlo, Consolas, monospace;
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:where(:not([data-theme="light"])) {
-    color-scheme: dark;
-    --bg: #121813;
-    --surface: #1a221b;
-    --surface-2: #232c24;
-    --text: #ede9e0;
-    --text-2: #b4bdae;
-    --text-3: #98a393;
-    --border: rgb(237 233 224 / 13%);
-    --primary: #b7cdb1;
-    --primary-hover: #cfe0ca;
-    --primary-ink: #121813;
-    --accent: #e58b72;
-    --accent-ink: #eda08b;
-    --accent-soft: #3a2a25;
-    --sage: #9bb39a;
-    --series-1: #7fb08f;
-    --on-strong: #0b0f0c;
-    --star: #e58b72;
-    --star-off: #98a393;
-    --good: #5fc46f;
-    --danger: #f08a78;
-    --danger-bg: #3a1c19;
-    --warn-bg: #3a2c10;
-    --warn-ink: #f7c873;
-    --shadow: 0 1px 2px rgb(0 0 0 / 35%), 0 12px 32px rgb(0 0 0 / 25%);
-    --shadow-lift: 0 18px 40px rgb(0 0 0 / 45%);
-  }
 }
 
 * { box-sizing: border-box; }

@@ -9,15 +9,22 @@ const ratingConfig = {
   labels: { 1: 'ควรปรับปรุง', 5: 'ดีเยี่ยม' },
 };
 
+// channels: หน้าร้าน (store) / ออนไลน์ (online) — ข้อที่อยู่ทั้งสองช่องทางรวมสถิติกันได้
+// ชุดนี้ต้องตรงกับ migration 20261014000001_channels.js (ที่เผยแพร่ชุดเดียวกันให้ฐานข้อมูลเดิม)
+const BOTH = ['store', 'online'];
 export const defaultQuestions = [
-  { key: 'taste', type: 'rating', label: 'รสชาติ', required: true, config: ratingConfig },
-  { key: 'food_quality', type: 'rating', label: 'คุณภาพอาหาร', required: true, config: ratingConfig },
-  { key: 'delivery_on_time', type: 'rating', label: 'การจัดส่งตรงต่อเวลา', required: true, config: ratingConfig },
+  { key: 'taste', type: 'rating', label: 'รสชาติ', required: true, channels: BOTH, config: ratingConfig },
+  { key: 'food_quality', type: 'rating', label: 'คุณภาพอาหาร', required: true, channels: BOTH, config: ratingConfig },
+  { key: 'staff_service', type: 'rating', label: 'การบริการของพนักงาน', required: true, channels: ['store'], config: ratingConfig },
+  { key: 'cleanliness', type: 'rating', label: 'ความสะอาดของร้าน', required: true, channels: ['store'], config: ratingConfig },
+  { key: 'delivery_on_time', type: 'rating', label: 'การจัดส่งตรงต่อเวลา', required: true, channels: ['online'], config: ratingConfig },
+  { key: 'packaging', type: 'rating', label: 'สภาพบรรจุภัณฑ์เมื่อได้รับ', required: true, channels: ['online'], config: ratingConfig },
   {
     key: 'overall_satisfaction',
     type: 'rating',
     label: 'ความพึงพอใจในการสั่งอาหารครั้งนี้',
     required: true,
+    channels: BOTH,
     config: ratingConfig,
   },
   {
@@ -25,6 +32,7 @@ export const defaultQuestions = [
     type: 'long_text',
     label: 'ข้อเสนอแนะเพิ่มเติม',
     required: false,
+    channels: BOTH,
     config: { maxLength: 1000, placeholder: 'บอกเราเพิ่มเติมได้เลย (ไม่บังคับ)' },
   },
 ];

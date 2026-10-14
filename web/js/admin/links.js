@@ -15,6 +15,8 @@ async function copy(text) {
   }
 }
 
+const CHANNEL_LABELS = { store: 'หน้าร้าน', online: 'ออนไลน์' };
+
 function statusBadge(l) {
   if (!l.isActive) return h('span', { class: 'badge off' }, 'ปิดใช้งาน');
   if (l.expiresAt && new Date(l.expiresAt) <= new Date()) return h('span', { class: 'badge off' }, 'หมดอายุ');
@@ -37,7 +39,7 @@ function linkCard(l, reload) {
   const details = h(
     'div',
     {},
-    h('div', { class: 'row' }, h('h3', {}, l.label), h('span', { class: 'badge' }, isCustomer ? 'ลูกค้า' : 'ผู้บริหาร'), statusBadge(l)),
+    h('div', { class: 'row' }, h('h3', {}, l.label), h('span', { class: 'badge' }, isCustomer ? `ลูกค้า · ${CHANNEL_LABELS[l.channel] ?? 'หน้าร้าน'}` : 'ผู้บริหาร'), statusBadge(l)),
     h('p', { class: 'muted small' }, isCustomer ? `สาขา: ${l.branchName ?? '–'}` : `ขอบเขต: ${l.branchName ?? 'ทุกสาขา'}`, ` · สร้างเมื่อ ${formatDateTime(l.createdAt)}`, l.expiresAt ? ` · หมดอายุ ${formatDateTime(l.expiresAt)}` : '', !isCustomer ? ` · เปิดดู ${l.hitCount} ครั้ง${l.lastUsedAt ? ` (ล่าสุด ${formatDateTime(l.lastUsedAt)})` : ''}` : ''),
     h('div', { class: 'url-row' }, urlInput, h('button', { class: 'btn', type: 'button', onclick: () => copy(l.url) }, 'คัดลอก')),
     h(
@@ -91,12 +93,17 @@ export async function linksPanel({ branchId = null, branches }) {
   async function reload() {
     const q = branchId ? `?branch_id=${branchId}` : '';
     const links = await api(`/admin/links${q}`);
-    const customer = links.filter((l) => l.kind === 'customer');
+    const customer = (channel) => links.filter((l) => l.kind === 'customer' && (l.channel ?? 'store') === channel);
     const dash = links.filter((l) => l.kind === 'dashboard');
+    const section = (channel, title, hint) => [
+      h('h2', {}, title),
+      h('p', { class: 'muted small' }, hint),
+      customer(channel).length ? h('div', { class: 'list' }, customer(channel).map((l) => linkCard(l, reload))) : h('p', { class: 'muted' }, 'ยังไม่มีลิงก์ — สร้างด้านบนได้เลย'),
+    ];
     clear(holder).append(
       createForm(),
-      h('h2', {}, 'ลิงก์/QR สำหรับลูกค้า'),
-      customer.length ? h('div', { class: 'list' }, customer.map((l) => linkCard(l, reload))) : h('p', { class: 'muted' }, 'ยังไม่มีลิงก์ลูกค้า — สร้างด้านบนได้เลย'),
+      ...section('store', 'ลิงก์/QR หน้าร้าน', 'ติดที่โต๊ะ เคาน์เตอร์ หรือหน้าร้าน — ลูกค้าตอบคำถามชุดหน้าร้าน'),
+      ...section('online', 'ลิงก์/QR ออนไลน์', 'แนบในแชต แอปเดลิเวอรี่ หรือสติกเกอร์บนกล่อง — ลูกค้าตอบคำถามชุดออนไลน์'),
       branchId ? null : h('h2', { style: undefined }, 'ลิงก์สำหรับผู้บริหาร (Dashboard รวม)'),
       branchId ? null : dash.length ? h('div', { class: 'list' }, dash.map((l) => linkCard(l, reload))) : h('p', { class: 'muted' }, 'ยังไม่มีลิงก์ผู้บริหาร'),
     );
@@ -105,6 +112,8 @@ export async function linksPanel({ branchId = null, branches }) {
   function createForm() {
     const kind = h('select', { name: 'kind', 'aria-label': 'ชนิดลิงก์' }, h('option', { value: 'customer' }, 'ลิงก์ลูกค้า (QR)'), branchId ? null : h('option', { value: 'dashboard' }, 'ลิงก์ผู้บริหาร (Dashboard)'));
     const branchSel = h('select', { name: 'branch', 'aria-label': 'สาขา' }, branchId ? null : h('option', { value: '' }, 'ทุกสาขา (เฉพาะลิงก์ผู้บริหาร)'), branches.filter((b) => b.isActive && (!branchId || b.id === branchId)).map((b) => h('option', { value: b.id, selected: b.id === branchId }, b.name)));
+    const channel = h('select', { name: 'channel', 'aria-label': 'ช่องทาง' }, h('option', { value: 'store' }, 'หน้าร้าน'), h('option', { value: 'online' }, 'ออนไลน์ (เดลิเวอรี่/แชต)'));
+    const channelField = h('label', { class: 'field' }, h('span', {}, 'ช่องทาง'), channel);
     const label = h('input', { type: 'text', name: 'label', maxlength: 200, placeholder: 'ชื่อลิงก์ เช่น “QR หน้าร้าน” / “ผู้บริหาร ไตรมาส 4”', 'aria-label': 'ชื่อลิงก์', required: true });
     const expires = h('input', { type: 'datetime-local', name: 'expires', 'aria-label': 'วันหมดอายุ (ไม่บังคับ)' });
     const error = h('p', { class: 'alert error hidden', role: 'alert' });
@@ -113,6 +122,7 @@ export async function linksPanel({ branchId = null, branches }) {
       const dash = kind.value === 'dashboard';
       branchSel.querySelector('option[value=""]')?.toggleAttribute('hidden', !dash);
       if (!dash && !branchSel.value) branchSel.selectedIndex = 1;
+      channelField.classList.toggle('hidden', dash); // ลิงก์ผู้บริหารไม่ผูกช่องทาง (กรองใน Dashboard แทน)
     });
     if (!branchId) branchSel.selectedIndex = 1; // เริ่มต้นเป็นสาขาแรก (ลิงก์ลูกค้าต้องมีสาขา)
 
@@ -120,7 +130,7 @@ export async function linksPanel({ branchId = null, branches }) {
       'form',
       { class: 'card stack', novalidate: true },
       h('h2', {}, 'สร้างลิงก์ใหม่'),
-      h('div', { class: 'grid-cards' }, h('label', { class: 'field' }, h('span', {}, 'ชนิด'), kind), h('label', { class: 'field' }, h('span', {}, 'สาขา'), branchSel), h('label', { class: 'field' }, h('span', {}, 'ชื่อลิงก์'), label), h('label', { class: 'field' }, h('span', {}, 'หมดอายุ (ไม่บังคับ)'), expires)),
+      h('div', { class: 'grid-cards' }, h('label', { class: 'field' }, h('span', {}, 'ชนิด'), kind), channelField, h('label', { class: 'field' }, h('span', {}, 'สาขา'), branchSel), h('label', { class: 'field' }, h('span', {}, 'ชื่อลิงก์'), label), h('label', { class: 'field' }, h('span', {}, 'หมดอายุ (ไม่บังคับ)'), expires)),
       error,
       h('button', { class: 'btn primary', type: 'submit' }, 'สร้างลิงก์'),
     );
@@ -130,7 +140,7 @@ export async function linksPanel({ branchId = null, branches }) {
       try {
         await api('/admin/links', {
           method: 'POST',
-          body: { kind: kind.value, branchId: branchSel.value ? Number(branchSel.value) : null, label: label.value, expiresAt: expires.value ? new Date(expires.value).toISOString() : null },
+          body: { kind: kind.value, channel: kind.value === 'customer' ? channel.value : null, branchId: branchSel.value ? Number(branchSel.value) : null, label: label.value, expiresAt: expires.value ? new Date(expires.value).toISOString() : null },
         });
         toast('สร้างลิงก์แล้ว');
         await reload();

@@ -6,7 +6,7 @@ import { db } from '../db/knex.js';
 import { loginLimiter } from '../middleware/rateLimit.js';
 import { requireAdmin } from '../middleware/auth.js';
 import { newPublicId, linkUrl } from '../services/tokens.js';
-import { parseQuestionDefinitions } from '../services/questions.js';
+import { parseQuestionDefinitions, CHANNELS, normalizeChannel } from '../services/questions.js';
 import { getLatestVersion, parseJson } from '../services/links.js';
 import { getStats, clearStatsCache } from '../services/aggregate.js';
 
@@ -153,6 +153,7 @@ adminRouter.post('/survey/publish', async (req, res) => {
 const serializeLink = (l, branchMap) => ({
   id: l.id,
   kind: l.kind,
+  channel: l.channel ?? null,
   label: l.label,
   branchId: l.branch_id,
   branchName: l.branch_id ? branchMap.get(l.branch_id) ?? null : null,
@@ -181,6 +182,7 @@ adminRouter.post('/links', async (req, res) => {
   const parsed = z
     .object({
       kind: z.enum(['customer', 'dashboard']),
+      channel: z.enum(CHANNELS).nullable().optional(),
       branchId: z.number().int().positive().nullable().optional(),
       label: z.string().trim().min(1).max(200),
       expiresAt: z.string().datetime().nullable().optional(),
@@ -189,8 +191,11 @@ adminRouter.post('/links', async (req, res) => {
   if (!parsed.success) return validationError(res, parsed.error);
   const { kind, label } = parsed.data;
   const branchId = parsed.data.branchId ?? null;
+  // ลิงก์ลูกค้าต้องเลือกช่องทาง (หน้าร้าน/ออนไลน์) — ลิงก์ผู้บริหารไม่ผูกช่องทาง (กรองใน Dashboard ได้)
+  const channel = kind === 'customer' ? parsed.data.channel ?? null : null;
 
   if (kind === 'customer' && !branchId) return res.status(422).json({ error: 'validation', issues: [{ path: 'branchId', message: 'ลิงก์ลูกค้าต้องระบุสาขา' }] });
+  if (kind === 'customer' && !channel) return res.status(422).json({ error: 'validation', issues: [{ path: 'channel', message: 'ลิงก์ลูกค้าต้องเลือกช่องทาง (หน้าร้าน/ออนไลน์)' }] });
   if (branchId && !(await db('branches').where({ id: branchId }).first())) return res.status(404).json({ error: 'branch_not_found' });
 
   const survey = await activeSurvey();
@@ -199,6 +204,7 @@ adminRouter.post('/links', async (req, res) => {
     public_id: publicId,
     survey_id: survey.id,
     kind,
+    channel,
     branch_id: branchId,
     label,
     expires_at: parsed.data.expiresAt ? new Date(parsed.data.expiresAt) : null,
@@ -267,7 +273,7 @@ adminRouter.get('/stats', async (req, res) => {
   const survey = await activeSurvey();
   if (!survey) return res.status(404).json({ error: 'not_found' });
   const branchId = req.query.branch_id ? Number(req.query.branch_id) : null;
-  const stats = await getStats({ surveyId: survey.id, branchId, range: req.query.range });
+  const stats = await getStats({ surveyId: survey.id, branchId, channel: normalizeChannel(req.query.channel), range: req.query.range });
   res.json({ title: survey.title, scope: branchId ? stats.branches[0]?.name ?? '' : 'ทุกสาขา', ...stats });
 });
 
@@ -275,8 +281,13 @@ adminRouter.get('/responses', async (req, res) => {
   const page = Math.max(1, Number(req.query.page) || 1);
   const pageSize = 25;
   const branchId = req.query.branch_id ? Number(req.query.branch_id) : null;
+  const channel = normalizeChannel(req.query.channel);
 
-  const base = () => db('responses as r').modify((q) => { if (branchId) q.where('r.branch_id', branchId); });
+  const base = () =>
+    db('responses as r').modify((q) => {
+      if (branchId) q.where('r.branch_id', branchId);
+      if (channel) q.where('r.channel', channel);
+    });
   const [{ n: total }] = await base().count({ n: '*' });
   const rows = await base()
     .leftJoin('branches as b', 'b.id', 'r.branch_id')
@@ -284,7 +295,7 @@ adminRouter.get('/responses', async (req, res) => {
     .orderBy('r.submitted_at', 'desc')
     .limit(pageSize)
     .offset((page - 1) * pageSize)
-    .select('r.id', 'r.submitted_at', 'r.version_id', 'b.name as branch', 'l.label as link');
+    .select('r.id', 'r.submitted_at', 'r.version_id', 'r.channel', 'b.name as branch', 'l.label as link');
 
   const answers = rows.length
     ? await db('answers').whereIn('response_id', rows.map((r) => r.id))
@@ -304,6 +315,7 @@ adminRouter.get('/responses', async (req, res) => {
       id: r.id,
       submittedAt: new Date(r.submitted_at).toISOString(),
       branch: r.branch,
+      channel: r.channel,
       link: r.link,
       answers: byResponse.get(r.id) ?? {},
     })),
