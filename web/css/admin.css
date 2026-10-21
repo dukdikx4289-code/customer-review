@@ -40,6 +40,10 @@
 .check { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; font-weight: 600; }
 .check input { width: 22px; height: 22px; accent-color: var(--accent); }
 .key { font-family: var(--font-mono); font-size: .75rem; color: var(--text-3); }
+.form-scope { margin-bottom: 16px; }
+.form-scope .field { margin-bottom: 4px; }
+.copy-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0 16px; max-height: 50vh; overflow-y: auto; }
+.copy-list .check { font-weight: 400; min-height: 40px; }
 .q-flags { flex-wrap: wrap; align-items: center; gap: 0 16px; padding-top: 6px; border-top: 1px solid var(--border); }
 .q-sep { width: 1px; height: 24px; background: var(--border); }
 .ch-badge { font-size: .75rem; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-ink); white-space: nowrap; }

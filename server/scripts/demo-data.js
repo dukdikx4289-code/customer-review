@@ -26,7 +26,7 @@ if (process.argv.includes('--clear')) {
 }
 
 const survey = await db('surveys').where({ status: 'active' }).first();
-const version = await db('survey_versions').where({ survey_id: survey.id }).orderBy('version_no', 'desc').first();
+const version = await db('survey_versions').where({ survey_id: survey.id }).whereNull('branch_id').orderBy('version_no', 'desc').first();
 const branches = await db('branches').where({ is_active: true }).orderBy('code');
 
 // ค่าเฉลี่ย "ที่ตั้งใจ" ต่อสาขา/หัวข้อ (สุ่มแบบคงที่ตามลำดับสาขา) เพื่อให้ Dashboard มีทั้งจุดดีและจุดที่ต้องแก้ไข

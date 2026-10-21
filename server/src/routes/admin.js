@@ -67,15 +67,22 @@ const branchSchema = z.object({
 
 adminRouter.get('/branches', async (_req, res) => {
   const rows = await db('branches').orderBy('code');
-  res.json(rows.map((b) => ({ id: b.id, code: b.code, name: b.name, isActive: !!b.is_active })));
+  res.json(rows.map((b) => ({ id: b.id, code: b.code, name: b.name, isActive: !!b.is_active, customForm: !!b.custom_form })));
 });
 
 adminRouter.post('/branches', async (req, res) => {
   const parsed = branchSchema.safeParse(req.body);
   if (!parsed.success) return validationError(res, parsed.error);
   if (await db('branches').where({ code: parsed.data.code }).first()) return res.status(409).json({ error: 'duplicate_code' });
-  const [id] = await db('branches').insert(parsed.data);
-  res.status(201).json({ id, ...parsed.data, isActive: true });
+  // สาขาใหม่ได้ฟอร์มของตัวเองทันที (สำเนาจากแม่แบบ) — แก้แยกได้โดยไม่กระทบสาขาอื่น
+  const survey = await activeSurvey();
+  const id = await db.transaction(async (trx) => {
+    const [branchId] = await trx('branches').insert({ ...parsed.data, custom_form: true });
+    const template = survey ? await getLatestVersion(survey.id, { database: trx }) : null;
+    if (template) await publishVersion(trx, survey.id, branchId, template.questions, template.settings);
+    return branchId;
+  });
+  res.status(201).json({ id, ...parsed.data, isActive: true, customForm: true });
 });
 
 adminRouter.patch('/branches/:id', async (req, res) => {
@@ -98,14 +105,44 @@ async function activeSurvey() {
   return db('surveys').where({ status: 'active' }).orderBy('id').first();
 }
 
-adminRouter.get('/survey', async (_req, res) => {
+/** เผยแพร่เวอร์ชันใหม่ (branchId = null คือแม่แบบสำหรับสาขาใหม่) — version_no นับรวมทั้งแบบสอบถาม */
+async function publishVersion(trx, surveyId, branchId, questions, settings) {
+  const last = await trx('survey_versions').where({ survey_id: surveyId }).max({ n: 'version_no' }).first();
+  const versionNo = Number(last?.n ?? 0) + 1;
+  await trx('survey_versions').insert({
+    survey_id: surveyId,
+    branch_id: branchId,
+    version_no: versionNo,
+    questions: JSON.stringify(questions),
+    settings: JSON.stringify(settings ?? {}),
+    published_at: trx.fn.now(3),
+  });
+  return versionNo;
+}
+
+// ฟอร์มที่จะดู/แก้: ?branch_id= ว่าง = ฟอร์มกลาง, มีค่า = ฟอร์มของสาขานั้น
+// ตอบ mode: 'template' (แม่แบบสำหรับสาขาใหม่ — ไม่มีสาขาไหนใช้ตรงๆ) | 'custom' (ฟอร์มของสาขา) | 'inherit' (สาขาเก่าที่ยังไม่แยก — กรณีพิเศษ)
+adminRouter.get('/survey', async (req, res) => {
   const survey = await activeSurvey();
   if (!survey) return res.status(404).json({ error: 'not_found' });
-  const version = await getLatestVersion(survey.id);
-  const versions = await db('survey_versions').where({ survey_id: survey.id }).orderBy('version_no', 'desc').select('version_no', 'published_at');
+  const branchId = Number(req.query.branch_id) || null;
+  const branch = branchId ? await db('branches').where({ id: branchId }).first() : null;
+  if (branchId && !branch) return res.status(404).json({ error: 'branch_not_found' });
+
+  const mode = !branch ? 'template' : branch.custom_form ? 'custom' : 'inherit';
+  const version = await getLatestVersion(survey.id, { branchId });
+  const versions = await db('survey_versions')
+    .where({ survey_id: survey.id })
+    .modify((q) => (mode === 'custom' ? q.where('branch_id', branchId) : q.whereNull('branch_id')))
+    .orderBy('version_no', 'desc')
+    .select('version_no', 'published_at');
+  const customBranches = await db('branches').where({ custom_form: true }).select('id');
   res.json({
     id: survey.id,
     title: survey.title,
+    mode,
+    branch: branch ? { id: branch.id, name: branch.name } : null,
+    customBranchIds: customBranches.map((b) => b.id),
     version: version.version_no,
     questions: version.questions,
     settings: version.settings,
@@ -113,10 +150,39 @@ adminRouter.get('/survey', async (_req, res) => {
   });
 });
 
+// (API สำรอง ไม่มีปุ่มใน UI) สาขาใช้ฟอร์มของตัวเอง (custom: true) — ครั้งแรกคัดลอกแม่แบบ; false = ใช้แม่แบบ (เวอร์ชันของสาขายังเก็บไว้)
+adminRouter.post('/survey/branch-mode', async (req, res) => {
+  const parsed = z.object({ branchId: z.number().int().positive(), custom: z.boolean() }).safeParse(req.body);
+  if (!parsed.success) return validationError(res, parsed.error);
+  const { branchId, custom } = parsed.data;
+  const survey = await activeSurvey();
+  if (!survey) return res.status(404).json({ error: 'not_found' });
+  if (!(await db('branches').where({ id: branchId }).first())) return res.status(404).json({ error: 'branch_not_found' });
+
+  await db.transaction(async (trx) => {
+    if (custom) {
+      const own = await trx('survey_versions').where({ survey_id: survey.id, branch_id: branchId }).first('id');
+      if (!own) {
+        const template = await getLatestVersion(survey.id, { database: trx });
+        await publishVersion(trx, survey.id, branchId, template.questions, template.settings);
+      }
+    }
+    await trx('branches').where({ id: branchId }).update({ custom_form: custom });
+  });
+  clearStatsCache();
+  res.json({ ok: true, mode: custom ? 'custom' : 'inherit' });
+});
+
 // เผยแพร่ = สร้างเวอร์ชันใหม่ (ของเก่าไม่ถูกแก้ จึงไม่กระทบคำตอบที่เก็บไปแล้ว)
+// branchId = ฟอร์มของสาขานั้น, ไม่ระบุ = แม่แบบสำหรับสาขาใหม่ — ชื่อแบบสอบถาม (title) ใช้ร่วมกัน แก้ได้ที่แม่แบบเท่านั้น
 adminRouter.post('/survey/publish', async (req, res) => {
   const parsed = z
-    .object({ title: z.string().trim().min(1).max(200).optional(), questions: z.unknown(), settings: z.record(z.string(), z.unknown()).optional() })
+    .object({
+      title: z.string().trim().min(1).max(200).optional(),
+      branchId: z.number().int().positive().nullable().optional(),
+      questions: z.unknown(),
+      settings: z.record(z.string(), z.unknown()).optional(),
+    })
     .safeParse(req.body);
   if (!parsed.success) return validationError(res, parsed.error);
 
@@ -130,23 +196,46 @@ adminRouter.post('/survey/publish', async (req, res) => {
 
   const survey = await activeSurvey();
   if (!survey) return res.status(404).json({ error: 'not_found' });
+  const branchId = parsed.data.branchId ?? null;
+  if (branchId) {
+    const branch = await db('branches').where({ id: branchId }).first();
+    if (!branch) return res.status(404).json({ error: 'branch_not_found' });
+    if (!branch.custom_form) return res.status(409).json({ error: 'branch_uses_central_form', message: 'เปิด "ใช้ฟอร์มของสาขานี้เอง" ก่อนเผยแพร่' });
+  }
 
   const result = await db.transaction(async (trx) => {
-    const last = await trx('survey_versions').where({ survey_id: survey.id }).max({ n: 'version_no' }).first();
-    const versionNo = Number(last?.n ?? 0) + 1;
-    const previous = await getLatestVersion(survey.id, trx);
-    await trx('survey_versions').insert({
-      survey_id: survey.id,
-      version_no: versionNo,
-      questions: JSON.stringify(questions),
-      settings: JSON.stringify(parsed.data.settings ?? previous?.settings ?? {}),
-      published_at: trx.fn.now(3),
-    });
-    if (parsed.data.title) await trx('surveys').where({ id: survey.id }).update({ title: parsed.data.title });
+    const previous = await getLatestVersion(survey.id, { branchId, database: trx });
+    const versionNo = await publishVersion(trx, survey.id, branchId, questions, parsed.data.settings ?? previous?.settings);
+    if (parsed.data.title && !branchId) await trx('surveys').where({ id: survey.id }).update({ title: parsed.data.title });
     return versionNo;
   });
   clearStatsCache();
   res.status(201).json({ ok: true, version: result });
+});
+
+// คัดลอกฟอร์ม (สาขาต้นทาง หรือแม่แบบเมื่อ fromBranchId = null) ไปยังหลายสาขา — เผยแพร่เป็นเวอร์ชันใหม่ของแต่ละสาขาปลายทาง
+adminRouter.post('/survey/copy', async (req, res) => {
+  const parsed = z
+    .object({ fromBranchId: z.number().int().positive().nullable(), toBranchIds: z.array(z.number().int().positive()).min(1).max(200) })
+    .safeParse(req.body);
+  if (!parsed.success) return validationError(res, parsed.error);
+  const survey = await activeSurvey();
+  if (!survey) return res.status(404).json({ error: 'not_found' });
+  const { fromBranchId } = parsed.data;
+  const targets = [...new Set(parsed.data.toBranchIds)].filter((id) => id !== fromBranchId);
+  const found = await db('branches').whereIn('id', targets).pluck('id');
+  if (found.length !== targets.length) return res.status(404).json({ error: 'branch_not_found' });
+
+  const copied = await db.transaction(async (trx) => {
+    const source = await getLatestVersion(survey.id, { branchId: fromBranchId, database: trx });
+    for (const id of targets) {
+      await publishVersion(trx, survey.id, id, source.questions, source.settings);
+      await trx('branches').where({ id }).update({ custom_form: true });
+    }
+    return targets.length;
+  });
+  clearStatsCache();
+  res.json({ ok: true, copied });
 });
 
 // ---------- links ----------

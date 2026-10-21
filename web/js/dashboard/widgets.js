@@ -68,25 +68,6 @@ function average(data) {
   };
 }
 
-/** ตารางสาขา x หัวข้อ สีเข้ม = คะแนนสูง, ⚠ = ต่ำกว่าเกณฑ์ */
-function branches(data) {
-  const grid = h('div', { class: 'bgrid', role: 'table', 'aria-label': 'คะแนนเฉลี่ยรายสาขาและหัวข้อ' });
-  grid.style.setProperty('--cols', data.questions.length);
-  grid.append(h('span', { class: 'h' }), ...data.questions.map((q) => h('span', { class: 'h', title: q.label }, q.label)));
-  for (const b of data.branches) {
-    grid.append(h('div', { class: 'name', title: b.name }, h('b', {}, b.name), h('span', {}, `${formatNumber(b.responses, 0)} รีวิว`)));
-    for (const q of data.questions) {
-      const s = b.scores[q.key];
-      if (!s) {
-        grid.append(h('span', { class: 'c none' }, '–'));
-        continue;
-      }
-      grid.append(heatCell(h('span'), s));
-    }
-  }
-  return { meta: '⚠ = ต่ำกว่า 3.5', body: grid };
-}
-
 /**
  * ใส่สี heatmap ให้ช่องหนึ่ง; s = { avg, n }
  * สีพื้นเป็นโทนอ่อน (ตัวอักษรสีปกติอ่านชัดเสมอ ทั้งโหมดสว่าง/มืด) และมีแถบบางด้านล่างยาวตามคะแนน = ยิ่งยาวยิ่งสูง
@@ -99,6 +80,37 @@ function heatCell(el, s, base = 'c') {
   el.textContent = formatNumber(s.avg);
   el.style.setProperty('--t', t.toFixed(3));
   return el;
+}
+
+/** ดาวแบบเติมสีตามค่าเฉลี่ย (เช่น 4.3 = เต็ม 4 ดวงกับอีก 0.3) — ตัวเลขอยู่ข้างๆ เสมอ ไม่พึ่งสีอย่างเดียว */
+function starMeter(avg, max = 5) {
+  const fill = h('i', { 'aria-hidden': 'true' }, '★★★★★');
+  fill.style.width = `${Math.max(0, Math.min(1, (avg ?? 0) / max)) * 100}%`;
+  return h('span', { class: 'star-meter', role: 'img', 'aria-label': avg == null ? 'ยังไม่มีคะแนน' : `${formatNumber(avg, 2)} จาก ${max} ดาว` }, h('span', { 'aria-hidden': 'true' }, '★★★★★'), fill);
+}
+
+/**
+ * เปรียบเทียบสาขาด้วย "ดาวรวม" (เฉลี่ยทุกคะแนนดาวของสาขา) — ใช้ได้แม้แต่ละสาขาใช้ฟอร์มต่างกัน
+ * เรียงจากดาวสูงไปต่ำ · แถบสีเล็กใต้ชื่อ = สัดส่วน 5★→1★ ของสาขานั้น
+ */
+function branchStars(data) {
+  const rows = data.branchStars ?? [];
+  if (!rows.length) return { body: h('p', { class: 'empty-note' }, 'ยังไม่มีสาขา') };
+  const list = h('ol', { class: 'bstars', 'aria-label': 'อันดับดาวรวมรายสาขา' });
+  rows.forEach((b, i) => {
+    const dist = { label: b.name, min: 1, max: 5, distribution: [...b.distribution].reverse() };
+    list.append(
+      h(
+        'li',
+        { class: b.avg != null && b.avg < 3.5 && b.ratings >= 3 ? 'low' : '' },
+        h('span', { class: 'rank' }, b.avg == null ? '–' : String(i + 1)),
+        h('div', { class: 'who' }, h('b', { title: b.name }, b.name), h('span', {}, `${formatNumber(b.responses, 0)} รีวิว`)),
+        h('div', { class: 'score' }, starMeter(b.avg), h('b', {}, b.avg == null ? '–' : formatNumber(b.avg, 2))),
+        b.ratings ? h('div', { class: 'mini' }, distBar(dist)) : h('div', { class: 'mini muted small' }, 'ยังไม่มีรีวิว'),
+      ),
+    );
+  });
+  return { meta: 'ดาวรวมทุกหัวข้อ · ⤢ ดูรายหัวข้อ', body: list };
 }
 
 /** มุมมองขยาย: ตารางสาขา x หัวข้อ กดหัวคอลัมน์เพื่อเรียงลำดับ */
@@ -261,7 +273,7 @@ export const WIDGETS = [
   { id: 'reviews', size: 'wide', title: 'จำนวนรีวิว', render: reviews },
   { id: 'satisfaction', size: 'sm', title: 'ความพึงพอใจ', render: satisfaction },
   { id: 'average', size: 'sm', title: 'คะแนนเฉลี่ย', render: average },
-  { id: 'branches', size: 'lg', title: 'เปรียบเทียบสาขา', render: branches, expanded: branchesExpanded },
+  { id: 'branches', size: 'lg', title: 'เปรียบเทียบสาขา (ดาวรวม)', render: branchStars, expanded: branchesExpanded },
   { id: 'questions', size: 'wide', title: 'คะแนนรายหัวข้อ', render: questions },
   { id: 'distribution', size: 'lg', title: 'การกระจายคะแนนรายหัวข้อ', render: distribution, expanded: distributionExpanded },
   { id: 'comments', size: 'lg', title: 'ข้อเสนอแนะล่าสุด', render: comments, expanded: commentsExpanded },

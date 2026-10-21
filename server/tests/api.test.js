@@ -34,7 +34,13 @@ after(async () => {
     const rs = await db('responses').where({ branch_id: state.branchId }).pluck('id');
     if (rs.length) await db('responses').whereIn('id', rs).del();
     await db('share_links').where({ branch_id: state.branchId }).del();
+    await db('survey_versions').where({ branch_id: state.branchId }).del(); // ฟอร์มของสาขาที่เทสต์สร้าง
     await db('branches').where({ id: state.branchId }).del();
+  }
+  if (state.branchB) {
+    await db('share_links').where({ branch_id: state.branchB }).del();
+    await db('survey_versions').where({ branch_id: state.branchB }).del();
+    await db('branches').where({ id: state.branchB }).del();
   }
   await db('share_links').where({ label: `dash ${suffix}` }).del();
   // ลบเฉพาะเวอร์ชันที่เทสต์นี้เผยแพร่ ถ้าไม่มี response อ้างอิง (ไม่แตะเวอร์ชันจริงจาก seed/migration)
@@ -202,30 +208,73 @@ test('แอดมินดูสถิติรายสาขา + ราย�
   assert.equal(r.body.items[0].answers.taste, 5);
 });
 
-test('เผยแพร่คำถามเวอร์ชันใหม่: ฟอร์มเปลี่ยนตาม, คำตอบเก่ายังอยู่', async () => {
-  const current = await admin.get('/api/admin/survey');
+test('เผยแพร่ฟอร์มสาขาเวอร์ชันใหม่: ฟอร์มสาขาเปลี่ยนตาม, คำตอบเก่ายังอยู่', async () => {
+  const forBranch = { branchId: state.branchId };
+  const current = await admin.get(`/api/admin/survey?branch_id=${state.branchId}`);
+  assert.equal(current.body.mode, 'custom'); // สาขาใหม่มีฟอร์มของตัวเองทันที
   const questions = [...current.body.questions, { key: 'would_return', type: 'single_choice', label: 'จะกลับมาอีกไหม', required: false, config: { options: [{ value: 'yes', label: 'ใช่' }, { value: 'no', label: 'ไม่' }] } }];
-  const pub = await admin.post('/api/admin/survey/publish').send({ questions });
+  const pub = await admin.post('/api/admin/survey/publish').send({ ...forBranch, questions });
   assert.equal(pub.status, 201);
-  assert.equal(pub.body.version, current.body.version + 1);
-  state.versions.push(pub.body.version);
+  assert.ok(pub.body.version > current.body.version);
   // ไม่ระบุช่องทาง = ทั้งสองช่องทาง, ช่องทางเดิมของข้ออื่นคงอยู่
-  const latest = await admin.get('/api/admin/survey');
+  const latest = await admin.get(`/api/admin/survey?branch_id=${state.branchId}`);
   assert.deepEqual(latest.body.questions.at(-1).channels, ['store', 'online']);
   assert.deepEqual(latest.body.questions.find((q) => q.key === 'delivery_on_time').channels, ['online']);
-  const emptyChannels = await admin.post('/api/admin/survey/publish').send({ questions: [{ ...questions[0], channels: [] }] });
+  const emptyChannels = await admin.post('/api/admin/survey/publish').send({ ...forBranch, questions: [{ ...questions[0], channels: [] }] });
   assert.equal(emptyChannels.status, 422);
 
   const form = await request(app).get(`/api/r/${state.customerToken}`);
   assert.equal(form.body.questions.at(-1).key, 'would_return');
 
-  const bad = await admin.post('/api/admin/survey/publish').send({ questions: [...questions, questions[0]] });
+  const bad = await admin.post('/api/admin/survey/publish').send({ ...forBranch, questions: [...questions, questions[0]] });
   assert.equal(bad.status, 422);
 
   const res = await request(app).post(`/api/r/${state.customerToken}/submit`).send({ answers: { taste: 4, food_quality: 4, delivery_on_time: 4, packaging: 4, overall_satisfaction: 4, would_return: 'yes' } });
   assert.equal(res.status, 201);
   const stats = await admin.get(`/api/admin/stats?range=all&branch_id=${state.branchId}`);
   assert.equal(stats.body.totals.responses, 2);
+});
+
+test('ฟอร์มแยกสาขา: แก้สาขา A ไม่กระทบสาขา B และแม่แบบ, คัดลอกฟอร์มไปสาขาอื่นได้', async () => {
+  // สาขา B สำหรับเทสต์นี้ (สร้างผ่าน API → ได้ฟอร์มของตัวเองจากแม่แบบทันที)
+  const b = await admin.post('/api/admin/branches').send({ code: `U${suffix}`.slice(0, 20).toUpperCase(), name: 'สาขาทดสอบ B' });
+  assert.equal(b.status, 201);
+  assert.equal(b.body.customForm, true);
+  state.branchB = b.body.id;
+  const bLink = await admin.post('/api/admin/links').send({ kind: 'customer', channel: 'store', branchId: state.branchB, label: `b ${suffix}` });
+  const bToken = tokenOf(bLink.body.url);
+
+  const a = await admin.get(`/api/admin/survey?branch_id=${state.branchId}`);
+  const parking = { key: 'parking', type: 'rating', label: 'ที่จอดรถ', required: false, channels: ['store'], config: { min: 1, max: 5 } };
+  const pub = await admin.post('/api/admin/survey/publish').send({ branchId: state.branchId, title: 'ห้ามเปลี่ยนชื่อกลาง', questions: [...a.body.questions, parking] });
+  assert.equal(pub.status, 201);
+
+  // QR หน้าร้านเดิมของสาขา A เห็นข้อใหม่ทันที (QR ไม่เปลี่ยน) — สาขา B และแม่แบบไม่เปลี่ยน
+  assert.ok((await request(app).get(`/api/r/${state.storeToken}`)).body.questions.some((q) => q.key === 'parking'));
+  assert.equal((await request(app).get(`/api/r/${bToken}`)).body.questions.some((q) => q.key === 'parking'), false);
+  const template = await admin.get('/api/admin/survey');
+  assert.equal(template.body.mode, 'template');
+  assert.equal(template.body.questions.some((q) => q.key === 'parking'), false);
+  assert.notEqual(template.body.title, 'ห้ามเปลี่ยนชื่อกลาง'); // ชื่อแบบสอบถามแก้ได้ที่แม่แบบเท่านั้น
+
+  // Dashboard รายสาขาใช้ฟอร์มสาขา, Dashboard รวมมีดาวรวมรายสาขา
+  const branchStats = await admin.get(`/api/admin/stats?range=all&branch_id=${state.branchId}`);
+  assert.ok(branchStats.body.questions.some((q) => q.key === 'parking'));
+  const all = await admin.get('/api/admin/stats?range=all');
+  const mine = all.body.branchStars.find((x) => x.id === state.branchId);
+  assert.equal(mine.responses, 2);
+  assert.ok(mine.avg >= 1 && mine.avg <= 5);
+  assert.equal(mine.distribution.length, 5);
+
+  // คัดลอกฟอร์ม A → B: B เห็นข้อใหม่, ฟอร์มยังแยกกัน (แก้ A ต่อไม่กระทบ B)
+  assert.equal((await admin.post('/api/admin/survey/copy').send({ fromBranchId: state.branchId, toBranchIds: [] })).status, 422);
+  assert.equal((await admin.post('/api/admin/survey/copy').send({ fromBranchId: state.branchId, toBranchIds: [999999999] })).status, 404);
+  const copy = await admin.post('/api/admin/survey/copy').send({ fromBranchId: state.branchId, toBranchIds: [state.branchB, state.branchId] });
+  assert.equal(copy.body.copied, 1); // ไม่คัดลอกทับตัวเอง
+  assert.ok((await request(app).get(`/api/r/${bToken}`)).body.questions.some((q) => q.key === 'parking'));
+  const aNow = await admin.get(`/api/admin/survey?branch_id=${state.branchId}`);
+  await admin.post('/api/admin/survey/publish').send({ branchId: state.branchId, questions: aNow.body.questions.filter((q) => q.key !== 'parking') });
+  assert.ok((await request(app).get(`/api/r/${bToken}`)).body.questions.some((q) => q.key === 'parking'));
 });
 
 test('QR ลูกค้าคงที่: หมุนเวียนไม่ได้, แก้ชื่อ/คำถาม/secret แล้วยังใช้ได้; ปิด/หมดอายุ = หยุดชั่วคราว', async () => {

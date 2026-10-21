@@ -69,6 +69,16 @@ export async function seed(knex) {
     survey = { id: surveyId };
   }
 
+  // ทุกสาขามีฟอร์มของตัวเอง (แก้แยกกัน) — สาขาที่ยังไม่มี คัดลอกจากแม่แบบ (ฟอร์มที่ branch_id IS NULL)
+  const template = await knex('survey_versions').where({ survey_id: survey.id }).whereNull('branch_id').orderBy('version_no', 'desc').first();
+  for (const b of await knex('branches').select('id')) {
+    if (!(await knex('survey_versions').where({ survey_id: survey.id, branch_id: b.id }).first('id'))) {
+      const last = await knex('survey_versions').where({ survey_id: survey.id }).max({ n: 'version_no' }).first();
+      await knex('survey_versions').insert({ survey_id: survey.id, branch_id: b.id, version_no: Number(last?.n ?? 0) + 1, questions: template.questions, settings: template.settings, published_at: knex.fn.now(3) });
+    }
+    await knex('branches').where({ id: b.id }).update({ custom_form: true });
+  }
+
   const { ADMIN_BOOTSTRAP_USER: user, ADMIN_BOOTSTRAP_PASSWORD: password } = config;
   if (user && password) {
     const exists = await knex('admin_users').where({ username: user }).first();

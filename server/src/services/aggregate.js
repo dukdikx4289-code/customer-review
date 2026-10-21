@@ -53,7 +53,8 @@ async function periodTotals(filters, primary) {
 const bkkDate = (date) => new Date(date.getTime() + BKK_OFFSET_MS).toISOString().slice(0, 10);
 
 async function computeStats({ surveyId, branchId, channel = null, range }) {
-  const version = await getLatestVersion(surveyId);
+  // ดูรายสาขา → ใช้ฟอร์มของสาขานั้น (ถ้าสาขามีฟอร์มของตัวเอง) | ดูรวม → ฟอร์มกลาง
+  const version = await getLatestVersion(surveyId, { branchId });
   // กรองช่องทาง: เห็นเฉพาะคำถามของช่องทางนั้น (ข้อที่ใช้ทั้งสองช่องทางรวมอยู่ด้วย)
   const questions = (version?.questions ?? []).filter((q) => !channel || inChannel(q, channel));
   const ratingQs = questions.filter((q) => q.type === 'rating');
@@ -177,6 +178,21 @@ async function computeStats({ surveyId, branchId, channel = null, range }) {
     return { id: b.id, code: b.code, name: b.name, isActive: !!b.is_active, responses: Number(count?.n ?? 0), scores };
   });
 
+  // "ดาวรวม" ต่อสาขา = เฉลี่ยทุกคะแนนดาวของสาขานั้น (ทุกหัวข้อ) — เทียบข้ามสาขาได้แม้แต่ละสาขาใช้ฟอร์มต่างกัน
+  const starRows = await base()
+    .whereNotNull('a.value_number')
+    .groupBy('r.branch_id', db.raw('ROUND(a.value_number)'))
+    .select('r.branch_id', db.raw('ROUND(a.value_number) as score'))
+    .count({ n: '*' });
+  const branchStars = branches
+    .map((b) => {
+      const dist = [5, 4, 3, 2, 1].map((s) => ({ score: s, count: starRows.filter((r) => r.branch_id === b.id && Number(r.score) === s).reduce((a, r) => a + Number(r.n), 0) }));
+      const ratings = dist.reduce((a, d) => a + d.count, 0);
+      return { id: b.id, name: b.name, isActive: b.isActive, responses: b.responses, ratings, avg: ratings ? round(dist.reduce((a, d) => a + d.score * d.count, 0) / ratings) : null, distribution: dist };
+    })
+    .filter((b) => b.responses > 0 || b.isActive)
+    .sort((x, y) => (y.avg ?? -1) - (x.avg ?? -1) || y.responses - x.responses);
+
   const attention = [];
   for (const b of branches) {
     for (const q of ratingQs) {
@@ -242,6 +258,7 @@ async function computeStats({ surveyId, branchId, channel = null, range }) {
       avg: round(num(r.avg)),
     })),
     branches,
+    branchStars,
     branchOptions: allBranches.filter((b) => b.is_active).map((b) => ({ id: b.id, name: b.name })),
     attention,
     comments,

@@ -18,7 +18,7 @@ async function loadContext(token) {
   const survey = await db('surveys').where({ id: link.survey_id }).first();
   if (!survey || survey.status !== 'active') return null;
 
-  const version = await getLatestVersion(survey.id);
+  const version = await getLatestVersion(survey.id, { branchId: link.branch_id });
   if (!version) return null;
 
   // ลิงก์ลูกค้าผูกช่องทาง (หน้าร้าน/ออนไลน์) — ลูกค้าเห็นเฉพาะคำถามของช่องทางนั้น

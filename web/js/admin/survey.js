@@ -1,5 +1,6 @@
-import { api } from '../api.js';
+import { api, ApiError } from '../api.js';
 import { h, clear, formatDateTime, toast } from '../util.js';
+import { openModal } from '../ui/modal.js';
 
 const TYPE_LABELS = {
   rating: 'ให้คะแนน (ดาว 1–5)',
@@ -29,8 +30,13 @@ function newQuestion(type, view) {
   return base;
 }
 
-export async function surveyView() {
-  const data = await api('/admin/survey');
+// ทุกสาขามีฟอร์มของตัวเอง แก้แยกกัน: #/survey/<branchId> = ฟอร์มสาขา, #/survey/template = แม่แบบสำหรับสาขาใหม่
+// ไม่ระบุ → เปิดฟอร์มของสาขาแรก
+export async function surveyView({ param } = {}) {
+  const branches = await api('/admin/branches');
+  const branchId = param === 'template' ? null : Number(param) || branches[0]?.id || null;
+  if (!param && branchId) history.replaceState(null, '', `#/survey/${branchId}`);
+  const data = await api(`/admin/survey${branchId ? `?branch_id=${branchId}` : ''}`);
   let questions = structuredClone(data.questions);
   let title = data.title;
   let thankYou = data.settings?.thankYou ?? '';
@@ -106,18 +112,21 @@ export async function surveyView() {
   function draw() {
     const typeSel = h('select', { 'aria-label': 'ชนิดคำถามที่จะเพิ่ม' }, Object.entries(TYPE_LABELS).map(([v, l]) => h('option', { value: v }, l)));
     const error = h('p', { class: 'alert error hidden', role: 'alert' });
-    const publish = h('button', { class: 'btn primary', type: 'button' }, `เผยแพร่เป็นเวอร์ชัน ${data.version + 1}`);
+    const publish = h('button', { class: 'btn primary', type: 'button' }, data.branch ? `เผยแพร่ฟอร์มของ ${data.branch.name}` : 'บันทึกแม่แบบ');
     publish.addEventListener('click', async () => {
       error.classList.add('hidden');
       if (questions.some((q) => !q.label.trim())) {
         error.textContent = 'มีคำถามที่ยังไม่ได้ใส่ข้อความ';
         return error.classList.remove('hidden');
       }
-      if (!confirm('เผยแพร่คำถามชุดนี้?\nลูกค้าที่เปิดฟอร์มหลังจากนี้จะเห็นชุดใหม่ทันที (คำตอบเก่าไม่ถูกแก้)')) return;
+      const msg = data.branch
+        ? `เผยแพร่ฟอร์มของ ${data.branch.name}?\nลูกค้าสาขานี้ที่สแกนหลังจากนี้จะเห็นชุดใหม่ทันที · สาขาอื่นไม่เปลี่ยน (คำตอบเก่าไม่ถูกแก้ · QR เดิมใช้ได้เหมือนเดิม)`
+        : 'บันทึกแม่แบบสำหรับสาขาใหม่?\nใช้เป็นจุดเริ่มต้นตอนเพิ่มสาขาใหม่เท่านั้น · สาขาที่มีอยู่ไม่เปลี่ยน';
+      if (!confirm(msg)) return;
       publish.disabled = true;
       try {
         const clean = questions.map(({ isNew, ...q }) => ({ ...q, label: q.label.trim() }));
-        await api('/admin/survey/publish', { method: 'POST', body: { title, questions: clean, settings: { ...data.settings, thankYou: thankYou.trim() || undefined } } });
+        await api('/admin/survey/publish', { method: 'POST', body: { title: data.branch ? undefined : title, branchId: data.branch?.id ?? null, questions: clean, settings: { ...data.settings, thankYou: thankYou.trim() || undefined } } });
         toast('เผยแพร่แล้ว');
         location.reload();
       } catch (err) {
@@ -135,8 +144,11 @@ export async function surveyView() {
     );
     const visible = questions.map((q, i) => [q, i]).filter(([q]) => view === 'all' || q.channels.includes(view));
 
+    const titleField = data.branch
+      ? h('p', { class: 'muted small' }, `ชื่อแบบสอบถาม "${title}" ใช้ร่วมกันทุกสาขา (แก้ได้ที่ "แม่แบบสำหรับสาขาใหม่")`)
+      : h('label', { class: 'field' }, h('span', {}, 'ชื่อแบบสอบถาม'), h('input', { type: 'text', value: title, maxlength: 200, oninput: (e) => (title = e.target.value) }));
     clear(holder).append(
-      h('section', { class: 'card stack' }, h('label', { class: 'field' }, h('span', {}, 'ชื่อแบบสอบถาม'), h('input', { type: 'text', value: title, maxlength: 200, oninput: (e) => (title = e.target.value) })), h('label', { class: 'field' }, h('span', {}, 'ข้อความขอบคุณหลังส่ง'), h('input', { type: 'text', value: thankYou, maxlength: 200, oninput: (e) => (thankYou = e.target.value) }))),
+      h('section', { class: 'card stack' }, titleField, h('label', { class: 'field' }, h('span', {}, 'ข้อความขอบคุณหลังส่ง'), h('input', { type: 'text', value: thankYou, maxlength: 200, oninput: (e) => (thankYou = e.target.value) }))),
       h('div', { class: 'row between section' }, viewSeg, h('span', { class: 'muted small' }, view === 'all' ? 'ข้อที่อยู่ทั้งสองช่องทางรวมสถิติกันได้' : `ลำดับที่ลูกค้า${VIEWS.find(([v]) => v === view)[1]}เห็น`)),
       h('div', { class: 'list section' }, visible.length ? visible.map(([q, i]) => questionCard(q, i)) : h('p', { class: 'muted' }, 'ยังไม่มีคำถามในช่องทางนี้')),
       h('div', { class: 'card row section' }, typeSel, h('button', { class: 'btn', type: 'button', onclick: () => { questions.push(newQuestion(typeSel.value, view)); draw(); window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }); } }, view === 'all' ? '+ เพิ่มคำถาม (ทั้งสองช่องทาง)' : `+ เพิ่มคำถาม (${VIEWS.find(([v]) => v === view)[1]})`)),
@@ -146,6 +158,90 @@ export async function surveyView() {
     );
   }
 
-  draw();
-  return h('div', {}, h('div', { class: 'page-head' }, h('h1', {}, 'แก้ไขคำถาม')), h('p', { class: 'muted' }, 'การเผยแพร่จะสร้างเวอร์ชันใหม่ คำตอบเก่ายังอ้างอิงเวอร์ชันเดิมและไม่ถูกแก้ · รหัสภายในของคำถามเดิมคงที่ เพื่อให้เทรนด์ต่อเนื่องแม้เปลี่ยนถ้อยคำ'), holder);
+  // เลือกฟอร์มที่จะแก้: ฟอร์มของแต่ละสาขา (แยกกันทั้งหมด) หรือแม่แบบสำหรับสาขาใหม่
+  const branchSel = h(
+    'select',
+    { 'aria-label': 'แก้ไขฟอร์มของ', onchange: (e) => (location.hash = `#/survey/${e.target.value}`) },
+    branches.map((b) => h('option', { value: b.id, selected: b.id === data.branch?.id }, b.isActive ? b.name : `${b.name} (ปิดอยู่)`)),
+    h('option', { value: 'template', selected: !data.branch }, '— แม่แบบสำหรับสาขาใหม่ —'),
+  );
+  const sourceName = data.branch ? data.branch.name : 'แม่แบบ';
+  const scopeCard = h(
+    'section',
+    { class: 'card stack form-scope' },
+    h('label', { class: 'field' }, h('span', {}, 'แก้ไขฟอร์มของ'), branchSel),
+    h(
+      'div',
+      { class: 'row between' },
+      h('span', { class: 'muted small' }, data.branch ? 'แก้แล้วเผยแพร่ มีผลเฉพาะสาขานี้ · สาขาอื่นไม่เปลี่ยน' : 'ใช้เป็นจุดเริ่มต้นตอนเพิ่มสาขาใหม่เท่านั้น · สาขาที่มีอยู่ไม่เปลี่ยน'),
+      branches.length > (data.branch ? 1 : 0) ? h('button', { class: 'btn small', type: 'button', onclick: (e) => copyDialog(e.currentTarget) }, `คัดลอกฟอร์ม${data.branch ? 'นี้' : 'แม่แบบ'}ไปยังสาขาอื่น…`) : null,
+    ),
+  );
+
+  // คัดลอกฟอร์มที่เผยแพร่แล้ว (ไม่รวมที่แก้ค้างอยู่) ไปหลายสาขา — แต่ละสาขาได้เวอร์ชันใหม่ของตัวเอง แก้ต่อแยกกันได้
+  function copyDialog(opener) {
+    const targets = branches.filter((b) => b.id !== data.branch?.id);
+    const boxes = targets.map((b) => h('input', { type: 'checkbox', value: b.id }));
+    const error = h('p', { class: 'alert error hidden', role: 'alert' });
+    const go = h('button', { class: 'btn primary', type: 'button' }, 'คัดลอก');
+    const dialog = openModal({
+      title: `คัดลอกฟอร์มของ ${sourceName}`,
+      opener,
+      body: h(
+        'div',
+        { class: 'stack' },
+        h('p', { class: 'muted small' }, 'ใช้ฟอร์มที่เผยแพร่ล่าสุด (ถ้าแก้ค้างอยู่ให้เผยแพร่ก่อน) · สาขาที่เลือกจะถูกแทนที่ด้วยฟอร์มนี้ทันที · QR เดิมใช้ได้เหมือนเดิม'),
+        h('label', { class: 'check' }, h('input', { type: 'checkbox', onchange: (e) => boxes.forEach((b) => (b.checked = e.target.checked)) }), 'เลือกทุกสาขา'),
+        h('div', { class: 'copy-list' }, targets.map((b, i) => h('label', { class: 'check' }, boxes[i], b.name))),
+        error,
+        h('div', { class: 'row' }, go),
+      ),
+    });
+    go.addEventListener('click', async () => {
+      const toBranchIds = boxes.filter((b) => b.checked).map((b) => Number(b.value));
+      if (!toBranchIds.length) {
+        error.textContent = 'เลือกอย่างน้อย 1 สาขา';
+        return error.classList.remove('hidden');
+      }
+      if (!confirm(`แทนที่ฟอร์มของ ${toBranchIds.length} สาขา ด้วยฟอร์มของ ${sourceName}?\nลูกค้าสาขาเหล่านั้นที่สแกนหลังจากนี้จะเห็นฟอร์มใหม่ทันที (คำตอบเก่าไม่ถูกแก้)`)) return;
+      go.disabled = true;
+      try {
+        const res = await api('/admin/survey/copy', { method: 'POST', body: { fromBranchId: data.branch?.id ?? null, toBranchIds } });
+        dialog.close();
+        toast(`คัดลอกไป ${res.copied} สาขาแล้ว`);
+      } catch (err) {
+        error.textContent = err instanceof ApiError ? `ไม่สำเร็จ (${err.message})` : 'ไม่สำเร็จ';
+        error.classList.remove('hidden');
+        go.disabled = false;
+      }
+    });
+  }
+
+  if (data.mode === 'inherit') {
+    // กรณีพิเศษ: สาขาที่ยังไม่มีฟอร์มของตัวเอง (เช่น ข้อมูลเก่าก่อนแยกฟอร์ม) — สร้างจากแม่แบบได้ในคลิกเดียว
+    clear(holder).append(
+      h(
+        'section',
+        { class: 'card stack' },
+        h('h2', {}, `สาขา ${data.branch.name} ยังไม่มีฟอร์มของตัวเอง`),
+        h('p', { class: 'muted small' }, 'ตอนนี้ลูกค้าสาขานี้เห็นแม่แบบ'),
+        h(
+          'button',
+          {
+            class: 'btn primary',
+            type: 'button',
+            onclick: async () => {
+              await api('/admin/survey/branch-mode', { method: 'POST', body: { branchId: data.branch.id, custom: true } });
+              location.reload();
+            },
+          },
+          'สร้างฟอร์มของสาขานี้จากแม่แบบ',
+        ),
+      ),
+    );
+  } else {
+    draw();
+  }
+  const intro = 'แต่ละสาขามีฟอร์มของตัวเอง แก้แยกกัน · การเผยแพร่สร้างเวอร์ชันใหม่ คำตอบเก่าไม่ถูกแก้ · ข้อที่รหัสภายในเดียวกันยังเทียบสถิติข้ามสาขาได้';
+  return h('div', {}, h('div', { class: 'page-head' }, h('h1', {}, 'แก้ไขคำถาม')), h('p', { class: 'muted' }, intro), scopeCard, holder);
 }

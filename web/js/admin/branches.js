@@ -61,7 +61,7 @@ function branchRow(b, reload) {
     'article',
     { class: 'card row between' },
     h('div', {}, h('h3', {}, b.name), h('span', { class: 'key' }, b.code), ' ', h('span', { class: `badge ${b.isActive ? 'good' : 'off'}` }, b.isActive ? 'เปิดอยู่' : 'ปิดอยู่')),
-    h('div', { class: 'row' }, h('a', { class: 'btn small primary', href: `#/branch/${b.id}` }, 'ดูผลและลิงก์'), h('button', { class: 'btn small', type: 'button', onclick: rename }, 'แก้ชื่อ'), h('button', { class: 'btn small', type: 'button', onclick: toggle }, b.isActive ? 'ปิดสาขา' : 'เปิดสาขา')),
+    h('div', { class: 'row' }, h('a', { class: 'btn small primary', href: `#/branch/${b.id}` }, 'ดูผลและลิงก์'), h('a', { class: 'btn small', href: `#/survey/${b.id}` }, 'แก้ฟอร์ม'), h('button', { class: 'btn small', type: 'button', onclick: rename }, 'แก้ชื่อ'), h('button', { class: 'btn small', type: 'button', onclick: toggle }, b.isActive ? 'ปิดสาขา' : 'เปิดสาขา')),
   );
 }
 

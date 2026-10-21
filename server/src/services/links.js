@@ -22,12 +22,24 @@ export async function resolveLink(token, kind, database = db) {
   return link;
 }
 
-export async function getLatestVersion(surveyId, database = db) {
-  const row = await database('survey_versions')
-    .where({ survey_id: surveyId })
-    .whereNotNull('published_at')
-    .orderBy('version_no', 'desc')
-    .first();
+/**
+ * เวอร์ชันคำถามที่ใช้อยู่: ถ้าระบุ branchId และสาขานั้นเปิด "ฟอร์มของสาขาเอง" → เวอร์ชันล่าสุดของสาขา
+ * นอกนั้น (หรือสาขายังไม่เคยเผยแพร่ฟอร์มของตัวเอง) → เวอร์ชันล่าสุดของฟอร์มกลาง (branch_id IS NULL)
+ */
+export async function getLatestVersion(surveyId, { branchId = null, database = db } = {}) {
+  const latest = (scope) =>
+    database('survey_versions')
+      .where({ survey_id: surveyId })
+      .modify((q) => (scope ? q.where('branch_id', scope) : q.whereNull('branch_id')))
+      .whereNotNull('published_at')
+      .orderBy('version_no', 'desc')
+      .first();
+  let row = null;
+  if (branchId) {
+    const branch = await database('branches').where({ id: branchId }).first('custom_form');
+    if (branch?.custom_form) row = await latest(branchId);
+  }
+  row ??= await latest(null);
   if (!row) return null;
   return { ...row, questions: parseJson(row.questions), settings: parseJson(row.settings) ?? {} };
 }
