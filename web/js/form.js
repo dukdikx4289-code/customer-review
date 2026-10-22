@@ -38,6 +38,37 @@ const ICONS = {
 const icon = (name) =>
   svg('svg', { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': 1.7, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true' }, ICONS[name].map(({ tag, ...attrs }) => svg(tag, attrs)));
 
+// ตัดบรรทัดภาษาไทยให้ขาดเฉพาะระหว่างวลี: แบ่งคำด้วย Intl.Segmenter แล้วรวมคำสั้นเข้ากับคำข้างๆ
+// - คำสั้น (≤ 3 ตัวอักษรหลัก เช่น "งาน" "นี้" "ใด" "ชาติ") ต่อท้ายคำก่อนหน้า → "ทีมงาน" "มื้อนี้" "รสชาติ" ไม่ขาด
+// - คำนำหน้า (ของ ที่ การ ใน จะ …) ต่อกับคำถัดไป → "ของคุณ" "การดูแล"
+// ห้ามตัดกลางวลี (<wbr> = จุดที่ตัดได้) · ชื่อร้านอยู่บรรทัดเดียวเสมอ · ไม่พึ่งตัวตัดคำของเบราว์เซอร์ (แอป LINE บางรุ่นตัดไม่ดี)
+// คำ/ชื่อที่ตัวแบ่งคำมักผ่ากลาง — ให้อยู่ด้วยกันเสมอ
+const KEEP_TOGETHER = ['เหนียวหมูไส้แตก', 'พึงพอใจ', 'ทีมงาน', 'ข้าวเหนียว', 'ตรงต่อเวลา', 'บรรจุภัณฑ์', 'เรียบร้อย', 'สั่งซื้อ', 'สั่งอาหาร', 'ข้อเสนอแนะ'];
+const JOIN_NEXT = new Set(['การ', 'ความ', 'ของ', 'ใน', 'ที่', 'จะ', 'อีก', 'ได้', 'ให้', 'ไม่', 'กับ', 'และ', 'หรือ', 'เพื่อ', 'จาก', 'ทุก', 'เมื่อ', 'ถ้า', 'แต่', 'ซึ่ง', 'โดย', 'ตาม']);
+const MAX_PHRASE = 22; // วลีไม่ยาวเกินนี้ (ตัวอักษร) กันล้นจอมือถือแคบ
+const baseLen = (t) => t.replace(/[ัิ-ฺ็-๎]/g, '').length; // ไม่นับสระบน/ล่าง วรรณยุกต์
+const segmenter = typeof Intl !== 'undefined' && Intl.Segmenter ? new Intl.Segmenter('th', { granularity: 'word' }) : null;
+function thaiPhrases(text) {
+  const chunks = []; // { t, word }
+  for (const part of String(text ?? '').split(new RegExp(`(${KEEP_TOGETHER.join('|')})`))) {
+    if (!part) continue;
+    if (KEEP_TOGETHER.includes(part) || !segmenter) chunks.push({ t: part, word: KEEP_TOGETHER.includes(part), keep: true });
+    else for (const { segment, isWordLike } of segmenter.segment(part)) chunks.push({ t: segment, word: isWordLike });
+  }
+  const groups = [];
+  let glue = false; // คำก่อนหน้าเป็นคำนำหน้า → ต่อกับคำนี้
+  for (const c of chunks) {
+    const last = groups.at(-1);
+    const prefix = c.word && JOIN_NEXT.has(c.t);
+    const short = c.word && !c.keep && !prefix && baseLen(c.t) <= 3;
+    if (c.word && last?.word && (glue || short) && last.t.length + c.t.length <= MAX_PHRASE) last.t += c.t;
+    else groups.push({ ...c });
+    glue = prefix;
+  }
+  return groups;
+}
+const thai = (text) => thaiPhrases(text).flatMap((g) => (g.word ? [h('span', { class: 'nobr' }, g.t), h('wbr')] : [g.t]));
+
 function notice(title, text) {
   clear(app).append(h('div', { class: 'notice' }, h('h1', {}, title), h('p', { class: 'muted' }, text)));
 }
@@ -167,7 +198,7 @@ function renderChooser(choices = CHANNEL_CHOICES.filter((c) => state.byChannel?.
       'div',
       { class: 'card-like chooser' },
       h('header', { class: 'top' }, logo(), h('p', { class: 'eyebrow' }, state.branch ? state.branch.name : state.survey.title), h('p', { class: 'brand' }, state.branch ? state.survey.title : '')),
-      h('div', { class: 'q-wrap' }, h('div', { class: 'question q-enter', role: 'group', 'aria-labelledby': 'pick-title' }, h('h1', { class: 'pick-title', id: 'pick-title' }, 'ครั้งนี้สั่งแบบไหน?'), h('div', { class: 'picks' }, buttons))),
+      h('div', { class: 'q-wrap' }, h('div', { class: 'question q-enter', role: 'group', 'aria-labelledby': 'pick-title' }, h('h1', { class: 'pick-title', id: 'pick-title' }, thai('ครั้งนี้สั่งแบบไหน?')), h('div', { class: 'picks' }, buttons))),
     ),
   );
 }
@@ -214,8 +245,8 @@ function render() {
   const title = h(
     'legend',
     {},
-    q.title ? h('span', { class: 'q-title' }, q.title) : null,
-    h('span', { class: 'q-text' }, q.label, q.required ? h('span', { class: 'req', 'aria-label': 'จำเป็น' }, '*') : null),
+    q.title ? h('span', { class: 'q-title' }, thai(q.title)) : null,
+    h('span', { class: 'q-text' }, thai(q.label), q.required ? h('span', { class: 'req', 'aria-label': 'จำเป็น' }, '*') : null),
   );
   const honeypot = h('div', { class: 'hp', 'aria-hidden': 'true' }, h('label', {}, 'อย่ากรอกช่องนี้', h('input', { type: 'text', name: 'website', tabindex: '-1', autocomplete: 'off', oninput: (e) => (state.website = e.target.value) })));
 
@@ -298,9 +329,9 @@ const SENT_MS = 1800;
 function done(settings = {}) {
   const text = (k) => settings[k]?.trim() || DONE_DEFAULTS[k];
   const tick = h('div', { class: 'tick', 'aria-hidden': 'true' }, svg('svg', { viewBox: '0 0 24 24', fill: 'none', 'stroke-width': 2.4, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, svg('path', { d: 'M5 12.5l4.5 4.5L19 7.5' })));
-  clear(app).append(h('div', { class: 'done card-like' }, h('div', { class: 'q-enter' }, tick, h('h1', { class: 'sent-title' }, text('sentTitle')))));
+  clear(app).append(h('div', { class: 'done card-like' }, h('div', { class: 'q-enter' }, tick, h('h1', { class: 'sent-title' }, thai(text('sentTitle'))))));
   setTimeout(() => {
-    clear(app).append(h('div', { class: 'done card-like' }, h('div', { class: 'q-enter' }, logo(), h('h1', { class: 'grad-text thanks-title' }, text('thanksTitle')), h('p', { class: 'thanks-text' }, text('thankYou')))));
+    clear(app).append(h('div', { class: 'done card-like' }, h('div', { class: 'q-enter' }, logo(), h('h1', { class: 'grad-text thanks-title' }, thai(text('thanksTitle'))), h('p', { class: 'thanks-text' }, thai(text('thankYou'))))));
   }, SENT_MS);
 }
 
