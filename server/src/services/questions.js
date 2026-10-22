@@ -14,6 +14,9 @@ export const LINK_CHANNELS = [...CHANNELS, 'choose'];
 
 export const inChannel = (q, channel) => !Array.isArray(q.channels) || q.channels.length === 0 || q.channels.includes(channel);
 
+/** ชื่อสั้นของคำถามสำหรับ Dashboard/หน้าคำตอบ: หัวข้อ (เช่น "รสชาติ") ถ้าตั้งไว้ ไม่งั้นใช้ข้อความคำถามเต็ม */
+export const shortLabel = (q) => q?.title?.trim() || q?.label;
+
 /** คำถามที่แสดงในช่องทางนี้ (เรียงตามลำดับเดิม) */
 export const questionsForChannel = (questions, channel) => questions.filter((q) => inChannel(q, channel));
 
@@ -28,6 +31,8 @@ const questionSchema = z
   .object({
     key: z.string().regex(KEY_RE, 'key ต้องเป็น a-z, 0-9, _ ขึ้นต้นด้วยตัวอักษร'),
     type: z.enum(QUESTION_TYPES),
+    // title = หัวข้อสั้นๆ (ไม่บังคับ) แสดงเหนือคำถาม · label = เนื้อเรื่อง/ข้อความคำถามที่ลูกค้าอ่าน
+    title: z.string().trim().max(60).optional().transform((t) => t || undefined),
     label: z.string().trim().min(1).max(200),
     required: z.boolean().default(false),
     channels: z

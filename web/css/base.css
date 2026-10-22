@@ -20,6 +20,9 @@
   --on-strong: #ffffff;
   --star: #2e8b43;
   --star-off: #6b776f;
+  /* หมูให้คะแนน (หน้าฟอร์ม): พื้นวงกลมชมพู + ขอบชมพูเข้มเมื่อเลือก */
+  --pig: #f7b6c6;
+  --pig-ink: #b8456a;
   --good: #1f7a36;
   --danger: #b3342a;
   --danger-bg: #fdecea;

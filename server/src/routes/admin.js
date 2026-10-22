@@ -6,9 +6,10 @@ import { db } from '../db/knex.js';
 import { loginLimiter } from '../middleware/rateLimit.js';
 import { requireAdmin } from '../middleware/auth.js';
 import { newPublicId, newStaticSig, linkUrl } from '../services/tokens.js';
-import { parseQuestionDefinitions, LINK_CHANNELS, normalizeChannel } from '../services/questions.js';
+import { parseQuestionDefinitions, LINK_CHANNELS, normalizeChannel, shortLabel } from '../services/questions.js';
 import { getLatestVersion, parseJson } from '../services/links.js';
 import { getStats, clearStatsCache } from '../services/aggregate.js';
+import { responseDetail } from '../services/responses.js';
 
 export const adminRouter = Router();
 
@@ -181,7 +182,15 @@ adminRouter.post('/survey/publish', async (req, res) => {
       title: z.string().trim().min(1).max(200).optional(),
       branchId: z.number().int().positive().nullable().optional(),
       questions: z.unknown(),
-      settings: z.record(z.string(), z.unknown()).optional(),
+      // ข้อความหลังส่ง: sentTitle = หน้าส่งสำเร็จ (ขึ้นสั้นๆ) → thanksTitle + thankYou = หน้าขอบคุณสุดท้าย
+      settings: z
+        .object({
+          sentTitle: z.string().trim().max(120).optional(),
+          thanksTitle: z.string().trim().max(200).optional(),
+          thankYou: z.string().trim().max(600).optional(),
+        })
+        .passthrough()
+        .optional(),
     })
     .safeParse(req.body);
   if (!parsed.success) return validationError(res, parsed.error);
@@ -411,7 +420,7 @@ async function questionCatalog() {
   const versions = await db('survey_versions').orderBy('id', 'desc').select('questions');
   const catalog = new Map();
   for (const v of versions) {
-    for (const q of parseJson(v.questions) ?? []) if (!catalog.has(q.key)) catalog.set(q.key, { key: q.key, label: q.label, type: q.type, min: q.config?.min ?? 1, max: q.config?.max ?? 5 });
+    for (const q of parseJson(v.questions) ?? []) if (!catalog.has(q.key)) catalog.set(q.key, { key: q.key, label: shortLabel(q), type: q.type, min: q.config?.min ?? 1, max: q.config?.max ?? 5 });
   }
   return [...catalog.values()];
 }
@@ -456,6 +465,13 @@ adminRouter.get('/responses', async (req, res) => {
       answers: byResponse.get(r.id) ?? {},
     })),
   });
+});
+
+adminRouter.get('/responses/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  const detail = Number.isInteger(id) && id > 0 ? await responseDetail(id) : null;
+  if (!detail) return res.status(404).json({ error: 'not_found' });
+  res.json(detail);
 });
 
 /**

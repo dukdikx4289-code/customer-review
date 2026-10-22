@@ -13,6 +13,7 @@ export async function statsPanel({ branchId = null, showBranchFilter = false }) 
       ...view,
       showBranchFilter,
       layoutKey: branchId ? 'admin-branch' : 'admin',
+      fetchResponse: (id) => api(`/admin/responses/${id}`),
       onChange: (next) => {
         Object.assign(view, next);
         load();

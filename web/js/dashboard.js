@@ -34,6 +34,7 @@ function draw() {
     ...view,
     showBranchFilter: true,
     layoutKey: 'exec',
+    fetchResponse: (id) => api(`/d/${encodeURIComponent(token)}/responses/${id}`),
     onChange: (next) => {
       Object.assign(view, next);
       load();

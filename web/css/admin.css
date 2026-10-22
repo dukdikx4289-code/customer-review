@@ -39,6 +39,8 @@
 .q-edit .head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
 .q-edit .two { display: grid; gap: 10px; grid-template-columns: 1fr; }
 @media (min-width: 600px) { .q-edit .two { grid-template-columns: 1fr 1fr; } }
+.q-edit .q-texts { display: grid; gap: 10px; grid-template-columns: 1fr; }
+@media (min-width: 600px) { .q-edit .q-texts { grid-template-columns: minmax(0, 1fr) minmax(0, 2.2fr); } }
 .check { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; font-weight: 600; }
 .check input { width: 22px; height: 22px; accent-color: var(--accent); }
 .key { font-family: var(--font-mono); font-size: .75rem; color: var(--text-3); }

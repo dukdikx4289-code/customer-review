@@ -4,7 +4,7 @@
 import { h, clear, formatDateTime } from './util.js';
 import { createBoard } from './dashboard/grid.js';
 import { tile } from './dashboard/ui.js';
-import { WIDGETS } from './dashboard/widgets.js';
+import { WIDGETS, responseDetailBody } from './dashboard/widgets.js';
 import { reveal, countAll } from './ui/motion.js';
 import { openModal } from './ui/modal.js';
 
@@ -23,7 +23,8 @@ const CHANNELS = [
 
 /**
  * วาด Dashboard ลงใน container
- * opts: { range, branchId, channel, onChange({range?, branchId?, channel?}), showBranchFilter, layoutKey }
+ * opts: { range, branchId, channel, onChange({range?, branchId?, channel?}), showBranchFilter, layoutKey,
+ *         fetchResponse(id) → Promise<รายละเอียดรีวิว> (ไม่ใส่ = กดดูรายละเอียดไม่ได้) }
  */
 export function renderDashboard(container, data, opts) {
   const { range, branchId, onChange } = opts;
@@ -69,8 +70,24 @@ export function renderDashboard(container, data, opts) {
     return;
   }
 
-  const ctx = { rangeLabel };
-  const tiles = WIDGETS.map((w) => ({
+  const ctx = {
+    rangeLabel,
+    // กดชื่อสาขาในการ์ดเปรียบเทียบ → กรองเฉพาะสาขานั้น (เฉพาะหน้าที่มีตัวเลือกสาขา)
+    selectBranch: branchSelect ? (id) => onChange({ range, channel, branchId: id }) : null,
+    // กดรีวิว → หน้าต่างคำตอบครบทุกข้อ
+    openResponse: opts.fetchResponse
+      ? async (id, opener) => {
+          const body = h('div', {}, h('p', { class: 'muted' }, 'กำลังโหลด…'));
+          openModal({ title: `รีวิว #${id}`, eyebrow: data.scope || undefined, body, opener });
+          try {
+            body.replaceChildren(responseDetailBody(await opts.fetchResponse(id)));
+          } catch {
+            body.replaceChildren(h('p', { class: 'alert error' }, 'โหลดรายละเอียดไม่สำเร็จ (รีวิวอาจถูกลบไปแล้ว)'));
+          }
+        }
+      : null,
+  };
+  const tiles = WIDGETS.filter((w) => !w.when || w.when(data)).map((w) => ({
     id: w.id,
     el: tile({
       id: w.id,

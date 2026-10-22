@@ -63,7 +63,11 @@ export async function seed(knex) {
       survey_id: surveyId,
       version_no: 1,
       questions: JSON.stringify(defaultQuestions),
-      settings: JSON.stringify({ thankYou: 'ขอบคุณสำหรับความคิดเห็นของคุณ' }),
+      settings: JSON.stringify({
+        sentTitle: 'ส่งความคิดเห็นเรียบร้อยแล้ว 💚',
+        thanksTitle: 'ขอบคุณที่ให้เหนียวหมูไส้แตกดูแลมื้อนี้ของคุณ',
+        thankYou: 'ความคิดเห็นของคุณจะช่วยให้เราปรับปรุงอาหารและบริการให้ดียิ่งขึ้น หวังว่าจะได้ดูแลคุณอีกครั้งในมื้อถัดไปนะคะ',
+      }),
       published_at: knex.fn.now(3),
     });
     survey = { id: surveyId };

@@ -1,7 +1,7 @@
 import { db } from '../db/knex.js';
 import { config } from '../config.js';
 import { getLatestVersion } from './links.js';
-import { CHANNELS, CHANNEL_LABELS, inChannel } from './questions.js';
+import { CHANNELS, CHANNEL_LABELS, inChannel, shortLabel } from './questions.js';
 
 const BKK_OFFSET_MS = 7 * 60 * 60 * 1000;
 const RANGES = { '7d': 7, '30d': 30, '90d': 90, all: null };
@@ -58,7 +58,6 @@ async function computeStats({ surveyId, branchId, channel = null, range }) {
   // กรองช่องทาง: เห็นเฉพาะคำถามของช่องทางนั้น (ข้อที่ใช้ทั้งสองช่องทางรวมอยู่ด้วย)
   const questions = (version?.questions ?? []).filter((q) => !channel || inChannel(q, channel));
   const ratingQs = questions.filter((q) => q.type === 'rating');
-  const textQs = questions.filter((q) => q.type === 'long_text' || q.type === 'short_text');
   const primary = ratingQs.find((q) => q.key === 'overall_satisfaction') ?? ratingQs.at(-1) ?? null;
   const filters = { surveyId, branchId, channel, from: rangeStart(range) };
   const channels = channel ? [channel] : CHANNELS;
@@ -113,7 +112,7 @@ async function computeStats({ surveyId, branchId, channel = null, range }) {
   const distSummary = (q, ch) => {
     const dist = questionDistribution(q, ch);
     const n = dist.reduce((a, d) => a + d.count, 0);
-    return { key: q.key, label: q.label, min: q.config?.min ?? 1, max: q.config?.max ?? 5, n, avg: n ? round(dist.reduce((a, d) => a + d.score * d.count, 0) / n) : null, distribution: dist };
+    return { key: q.key, label: shortLabel(q), min: q.config?.min ?? 1, max: q.config?.max ?? 5, n, avg: n ? round(dist.reduce((a, d) => a + d.score * d.count, 0) / n) : null, distribution: dist };
   };
   const distributionByChannel = channels.map((ch) => ({ channel: ch, label: CHANNEL_LABELS[ch], questions: ratingQs.filter((q) => inChannel(q, ch)).map((q) => distSummary(q, ch)) }));
 
@@ -198,36 +197,49 @@ async function computeStats({ surveyId, branchId, channel = null, range }) {
     for (const q of ratingQs) {
       const s = b.scores[q.key];
       if (s && s.n >= ATTENTION_MIN_RESPONSES && s.avg < ATTENTION_THRESHOLD) {
-        attention.push({ branch: b.name, branchId: b.id, question: q.label, key: q.key, avg: s.avg, n: s.n });
+        attention.push({ branch: b.name, branchId: b.id, question: shortLabel(q), key: q.key, avg: s.avg, n: s.n });
       }
     }
   }
   attention.sort((x, y) => x.avg - y.avg);
 
-  let comments = [];
-  if (textQs.length) {
-    const rows = await base()
-      .whereIn('a.question_key', textQs.map((q) => q.key))
-      .whereNotNull('a.value_text')
-      .orderBy('r.submitted_at', 'desc')
-      .limit(20)
-      .select('r.id as response_id', 'r.submitted_at', 'r.branch_id', 'r.channel', 'a.question_key', 'a.value_text');
-    const scores = primary && rows.length
-      ? await db('answers').whereIn('response_id', rows.map((r) => r.response_id)).where({ question_key: primary.key }).select('response_id', 'value_number')
-      : [];
-    const scoreMap = new Map(scores.map((s) => [s.response_id, num(s.value_number)]));
-    const labelMap = new Map(textQs.map((q) => [q.key, q.label]));
-    const branchMap = new Map(branchRows.map((b) => [b.id, b.name]));
-    comments = rows.map((r) => ({
-      id: r.response_id,
+  // คำถามแบบเลือก (เช่น "รู้จักเราจากช่องทางไหน") — ดูรวมทุกสาขา = รวมคำถามจากฟอร์มของทุกสาขา (แต่ละสาขาแก้ฟอร์มแยกกัน)
+  const choiceQs = await choiceQuestions(surveyId, branchId, channel);
+  const choiceRows = choiceQs.length
+    ? await base().whereIn('a.question_key', choiceQs.map((q) => q.key)).select('a.question_key', 'a.value_text', 'a.value_json')
+    : [];
+  const choices = choiceQs
+    .map((q) => {
+      const counts = new Map([...q.options.keys()].map((v) => [v, 0]));
+      let respondents = 0;
+      for (const r of choiceRows.filter((x) => x.question_key === q.key)) {
+        const picked = r.value_json != null ? parseList(r.value_json) : r.value_text != null ? [r.value_text] : [];
+        if (!picked.length) continue;
+        respondents++;
+        for (const v of picked) counts.set(v, (counts.get(v) ?? 0) + 1);
+      }
+      const options = [...counts].map(([value, count]) => ({ value, label: q.options.get(value) ?? value, count })).sort((x, y) => y.count - x.count);
+      return { key: q.key, label: q.label, type: q.type, respondents, options };
+    })
+    .filter((q) => q.options.length);
+
+  // รีวิวล่าสุด 20 รายการ (กดดูคำตอบครบได้ที่ /responses/:id)
+  const recentRows = await applyFilters(db('responses as r'), filters).orderBy('r.submitted_at', 'desc').limit(20).select('r.id', 'r.submitted_at', 'r.branch_id', 'r.channel');
+  const recentAnswers = recentRows.length ? await db('answers').whereIn('response_id', recentRows.map((r) => r.id)).select('response_id', 'question_key', 'value_number', 'value_text') : [];
+  const textKeys = new Set(await textQuestionKeys(surveyId));
+  const branchMap = new Map(allBranches.map((b) => [b.id, b.name]));
+  const recent = recentRows.map((r) => {
+    const mine = recentAnswers.filter((a) => a.response_id === r.id);
+    const scores = mine.filter((a) => a.value_number != null).map((a) => Number(a.value_number));
+    return {
+      id: r.id,
       submittedAt: new Date(r.submitted_at).toISOString(),
       branch: branchMap.get(r.branch_id) ?? null,
       channel: r.channel,
-      question: labelMap.get(r.question_key),
-      score: scoreMap.get(r.response_id) ?? null,
-      text: r.value_text,
-    }));
-  }
+      avg: scores.length ? round(scores.reduce((x, y) => x + y, 0) / scores.length, 1) : null,
+      comment: mine.find((a) => textKeys.has(a.question_key) && a.value_text)?.value_text ?? null,
+    };
+  });
 
   return {
     range: normalizeRange(range),
@@ -240,10 +252,10 @@ async function computeStats({ surveyId, branchId, channel = null, range }) {
     },
     previous,
     activity,
-    primary: primary ? { key: primary.key, label: primary.label, min, max } : null,
+    primary: primary ? { key: primary.key, label: shortLabel(primary), min, max } : null,
     questions: ratingQs.map((q) => ({
       key: q.key,
-      label: q.label,
+      label: shortLabel(q),
       avg: round(num(perQuestionMap.get(q.key)?.avg)),
       n: Number(perQuestionMap.get(q.key)?.n ?? 0),
       min: q.config?.min ?? 1,
@@ -261,8 +273,38 @@ async function computeStats({ surveyId, branchId, channel = null, range }) {
     branchStars,
     branchOptions: allBranches.filter((b) => b.is_active).map((b) => ({ id: b.id, name: b.name })),
     attention,
-    comments,
+    choices,
+    recent,
   };
+}
+
+const parseList = (v) => {
+  const list = typeof v === 'string' ? JSON.parse(v) : v;
+  return Array.isArray(list) ? list.map(String) : [];
+};
+
+/** คำถามแบบเลือกที่ใช้อยู่: สาขาเดียว = ฟอร์มของสาขานั้น, ทุกสาขา = รวมจากแม่แบบ + ฟอร์มทุกสาขา (รวมตัวเลือกตามรหัสคำถาม) */
+async function choiceQuestions(surveyId, branchId, channel) {
+  const branchIds = branchId ? [branchId] : [null, ...(await db('branches').where({ custom_form: true }).pluck('id'))];
+  const versions = await Promise.all(branchIds.map((id) => getLatestVersion(surveyId, { branchId: id })));
+  const byKey = new Map();
+  for (const v of versions) {
+    for (const q of v?.questions ?? []) {
+      if ((q.type !== 'single_choice' && q.type !== 'multi_choice') || (channel && !inChannel(q, channel))) continue;
+      const cur = byKey.get(q.key) ?? { key: q.key, label: shortLabel(q), type: q.type, options: new Map() };
+      for (const o of q.config?.options ?? []) if (!cur.options.has(o.value)) cur.options.set(o.value, o.label);
+      byKey.set(q.key, cur);
+    }
+  }
+  return [...byKey.values()];
+}
+
+/** รหัสคำถามแบบข้อความของทุกเวอร์ชัน (ใช้หาข้อเสนอแนะของรีวิว) */
+async function textQuestionKeys(surveyId) {
+  const versions = await db('survey_versions').where({ survey_id: surveyId }).select('questions');
+  const keys = new Set();
+  for (const v of versions) for (const q of (typeof v.questions === 'string' ? JSON.parse(v.questions) : v.questions) ?? []) if (q.type === 'short_text' || q.type === 'long_text') keys.add(q.key);
+  return [...keys];
 }
 
 // แคชในหน่วยความจำ (คำนวณเมื่อมีคนเปิดเท่านั้น ไม่ polling) — ลดการใช้ Request Unit ของ TiDB

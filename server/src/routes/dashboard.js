@@ -3,6 +3,7 @@ import { db } from '../db/knex.js';
 import { resolveLink } from '../services/links.js';
 import { getStats } from '../services/aggregate.js';
 import { normalizeChannel } from '../services/questions.js';
+import { responseDetail } from '../services/responses.js';
 import { badTokenLimiter } from '../middleware/rateLimit.js';
 
 export const dashboardRouter = Router();
@@ -25,4 +26,14 @@ dashboardRouter.get('/d/:token/stats', badTokenLimiter, async (req, res) => {
   // ลิงก์ที่ผูกกับสาขาเดียวไม่ควรเห็นรายชื่อสาขาอื่น
   const branchOptions = link.branch_id ? [] : stats.branchOptions;
   res.json({ title: survey?.title ?? '', scope: link.label, ...stats, branchOptions });
+});
+
+// รายละเอียดคำตอบ 1 รีวิว (อ่านอย่างเดียว) — ลิงก์ที่ผูกสาขาเห็นเฉพาะรีวิวของสาขานั้น
+dashboardRouter.get('/d/:token/responses/:id', badTokenLimiter, async (req, res) => {
+  const link = await resolveLink(req.params.token, 'dashboard');
+  const id = Number(req.params.id);
+  if (!link || !Number.isInteger(id) || id <= 0) return res.status(404).json({ error: 'not_found' });
+  const detail = await responseDetail(id, { surveyId: link.survey_id, branchId: link.branch_id });
+  if (!detail) return res.status(404).json({ error: 'not_found' });
+  res.json(detail);
 });

@@ -174,7 +174,21 @@ test('Dashboard ผู้บริหาร: เห็นข้อมูลร�
   assert.equal(mine.scores.taste.avg, 5);
   // delivery 2 ดาว (n=1) ยังไม่ถึงเกณฑ์ตัวอย่างขั้นต่ำ จึงไม่ขึ้นเตือน
   assert.equal(res.body.attention.some((a) => a.branchId === state.branchId), false);
-  assert.equal(res.body.comments.some((c) => c.branch === 'สาขาทดสอบ 😀'), true);
+  // รีวิวล่าสุด: มีสาขา ช่องทาง ดาวเฉลี่ย และข้อเสนอแนะ (ข้อความดิบ ไม่ถูกแปลงเป็น HTML)
+  const mineRecent = res.body.recent.find((r) => r.branch === 'สาขาทดสอบ 😀');
+  assert.ok(mineRecent);
+  assert.equal(mineRecent.channel, 'online');
+  assert.equal(mineRecent.comment, 'อร่อย <script>alert(1)</script> =SUM(1)');
+  assert.ok(mineRecent.avg >= 1 && mineRecent.avg <= 5);
+  // รายละเอียดรีวิวผ่านลิงก์ผู้บริหาร: เรียงตามฟอร์ม, มีคำตอบครบ
+  const detail = await request(app).get(`/api/d/${state.dashboardToken}/responses/${mineRecent.id}`);
+  assert.equal(detail.status, 200);
+  assert.equal(detail.body.channel, 'online');
+  assert.equal(detail.body.items.find((i) => i.key === 'delivery_on_time').value, 2);
+  assert.equal(detail.body.items.some((i) => i.key === 'staff_service'), false); // ข้อหน้าร้าน ลูกค้าออนไลน์ไม่ได้ถูกถาม
+  assert.equal((await request(app).get(`/api/d/${state.dashboardToken}/responses/999999999`)).status, 404);
+  assert.equal((await request(app).get(`/api/d/${state.dashboardToken}/responses/abc`)).status, 404);
+  assert.equal((await request(app).get(`/api/d/${state.customerToken}/responses/${mineRecent.id}`)).status, 404); // ลิงก์ลูกค้าดูไม่ได้
   assert.equal(res.body.distribution.length, 5);
   // การกระจายรายหัวข้อ: ครบ 5 ระดับทุกหัวข้อ และนับรีวิวทดสอบ (taste 5 ดาว, delivery 2 ดาว) ถูกช่อง
   const dist = Object.fromEntries(res.body.questions.map((q) => [q.key, q.distribution]));
@@ -237,6 +251,18 @@ test('เผยแพร่ฟอร์มสาขาเวอร์ชัน�
   assert.equal(res.status, 201);
   const stats = await admin.get(`/api/admin/stats?range=all&branch_id=${state.branchId}`);
   assert.equal(stats.body.totals.responses, 2);
+
+  // สรุปคำถามแบบเลือก (เช่น รู้จักเราจากไหน): นับตามตัวเลือก ใช้ชื่อตัวเลือกจากฟอร์ม
+  const wr = stats.body.choices.find((q) => q.key === 'would_return');
+  assert.equal(wr.respondents, 1);
+  assert.deepEqual(wr.options.map((o) => [o.label, o.count]), [['ใช่', 1], ['ไม่', 0]]);
+  // ดูรวมทุกสาขา: รวมคำถามแบบเลือกจากฟอร์มของทุกสาขา (ข้อนี้มีแค่ในฟอร์มสาขาทดสอบ)
+  assert.ok((await admin.get('/api/admin/stats?range=all')).body.choices.some((q) => q.key === 'would_return'));
+  // รายละเอียดรีวิวฝั่งแอดมิน: แสดงชื่อตัวเลือก ไม่ใช่รหัส
+  const newest = stats.body.recent[0];
+  const detail = await admin.get(`/api/admin/responses/${newest.id}`);
+  assert.equal(detail.body.items.find((i) => i.key === 'would_return').value, 'ใช่');
+  assert.equal((await request(app).get(`/api/admin/responses/${newest.id}`)).status, 401);
 });
 
 test('ฟอร์มแยกสาขา: แก้สาขา A ไม่กระทบสาขา B และแม่แบบ, คัดลอกฟอร์มไปสาขาอื่นได้', async () => {
@@ -389,6 +415,36 @@ test('QR แบบลูกค้าเลือกเอง: หน้าเล
   assert.equal((await admin.patch(`/api/admin/links/${state.dashboard.id}`).send({ channel: 'choose' })).status, 422); // ลิงก์ผู้บริหารไม่มีช่องทาง
   await admin.patch(`/api/admin/links/${storeLink.id}`).send({ channel: 'store' });
   assert.equal((await request(app).get(`/api/r/${state.storeToken}`)).body.channel, 'store');
+});
+
+test('หัวข้อคำถาม + ข้อความหน้าขอบคุณ: แอดมินตั้งได้, ลูกค้าเห็น, Dashboard ใช้หัวข้อเป็นชื่อ, QR เดิมไม่เปลี่ยน', async () => {
+  const linksBefore = (await admin.get(`/api/admin/links?branch_id=${state.branchId}`)).body.map((l) => l.url);
+  const cur = await admin.get(`/api/admin/survey?branch_id=${state.branchId}`);
+  const questions = cur.body.questions.map((q) => (q.key === 'taste' ? { ...q, title: ' รสชาติ ', label: 'คุณพึงพอใจกับรสชาติอาหารครั้งนี้เพียงใด' } : q));
+  const texts = { sentTitle: 'ส่งแล้ว 💚', thanksTitle: 'ขอบคุณที่ให้เราดูแล', thankYou: 'บรรทัด 1\nบรรทัด 2' };
+  assert.equal((await admin.post('/api/admin/survey/publish').send({ branchId: state.branchId, questions, settings: texts })).status, 201);
+  assert.equal((await admin.post('/api/admin/survey/publish').send({ branchId: state.branchId, questions, settings: { sentTitle: 'ก'.repeat(121) } })).status, 422);
+  assert.equal((await admin.post('/api/admin/survey/publish').send({ branchId: state.branchId, questions: [{ ...questions[0], title: 'ก'.repeat(61) }] })).status, 422);
+
+  const form = await request(app).get(`/api/r/${state.storeToken}`);
+  const taste = form.body.questions.find((q) => q.key === 'taste');
+  assert.equal(taste.title, 'รสชาติ');
+  assert.equal(taste.label, 'คุณพึงพอใจกับรสชาติอาหารครั้งนี้เพียงใด');
+  assert.equal(form.body.questions.find((q) => q.key === 'food_quality').title, undefined); // ไม่ตั้ง = ไม่มีหัวข้อ
+  assert.deepEqual({ sentTitle: form.body.settings.sentTitle, thanksTitle: form.body.settings.thanksTitle, thankYou: form.body.settings.thankYou }, texts);
+
+  const answers = { taste: 2, food_quality: 4, staff_service: 4, cleanliness: 4, overall_satisfaction: 4 };
+  const sent = await request(app).post(`/api/r/${state.storeToken}/submit`).send({ answers });
+  assert.equal(sent.status, 201);
+  assert.equal(sent.body.thankYou, texts.thankYou);
+
+  const stats = await admin.get(`/api/admin/stats?branch_id=${state.branchId}`);
+  assert.ok(stats.body.questions.some((q) => q.key === 'taste' && q.label === 'รสชาติ'));
+  const detail = await admin.get(`/api/admin/responses/${stats.body.recent[0].id}`);
+  assert.equal(detail.body.items.find((it) => it.key === 'taste').label, 'รสชาติ');
+
+  const linksAfter = (await admin.get(`/api/admin/links?branch_id=${state.branchId}`)).body.map((l) => l.url);
+  assert.deepEqual(linksAfter, linksBefore);
 });
 
 test('ออกจากระบบแล้วเข้า admin ไม่ได้', async () => {

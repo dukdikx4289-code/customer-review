@@ -11,9 +11,32 @@ const token = tokenFromPath();
 const state = { survey: null, branch: null, channel: null, byChannel: null, questions: [], settings: {}, answers: {}, index: 0, website: '', submitting: false };
 const CHANNEL_LABELS = { store: 'หน้าร้าน', online: 'ออนไลน์' };
 const CHANNEL_CHOICES = [
-  { value: 'store', icon: '🏪', title: 'ทาน / ซื้อที่หน้าร้าน', hint: 'มาที่ร้านด้วยตัวเอง' },
-  { value: 'online', icon: '🛵', title: 'สั่งออนไลน์ / เดลิเวอรี่', hint: 'สั่งผ่านแอป แชต หรือโทรสั่ง' },
+  { value: 'store', icon: 'store', title: 'ซื้อที่หน้าร้าน', hint: 'มาที่ร้านด้วยตัวเอง' },
+  { value: 'online', icon: 'delivery', title: 'สั่งออนไลน์ / เดลิเวอรี่', hint: 'สั่งผ่านแอป แชต หรือโทรสั่ง' },
 ];
+
+// ไอคอนเส้น (stroke = สีตัวอักษร) แทนอีโมจิ — หน้าตาเหมือนกันทุกมือถือและเข้ากับธีม
+const ICONS = {
+  // หน้าร้าน: กันสาดลอนคลื่น + ตัวร้าน + ประตู
+  store: [
+    { tag: 'path', d: 'M3.5 10 5 5h14l1.5 5' },
+    { tag: 'path', d: 'M3.5 10a2.13 2.13 0 0 0 4.25 0a2.13 2.13 0 0 0 4.25 0a2.13 2.13 0 0 0 4.25 0a2.13 2.13 0 0 0 4.25 0' },
+    { tag: 'path', d: 'M5 12.6V20h14v-7.4' },
+    { tag: 'path', d: 'M10 20v-4.5h4V20' },
+  ],
+  // เดลิเวอรี่: มอเตอร์ไซค์ + กล่องส่งของด้านหลัง
+  delivery: [
+    { tag: 'circle', cx: 6, cy: 17, r: 2.5 },
+    { tag: 'circle', cx: 18, cy: 17, r: 2.5 },
+    { tag: 'path', d: 'M8.5 17h5.5l2.2-6.5h2.3' },
+    { tag: 'path', d: 'M16.2 10.5 15.4 7H18' },
+    { tag: 'path', d: 'M18.5 10.5 20 14.6' },
+    { tag: 'path', d: 'M3.5 15 5 12.5h6' },
+    { tag: 'rect', x: 3, y: 5.5, width: 6.5, height: 5, rx: 1 },
+  ],
+};
+const icon = (name) =>
+  svg('svg', { viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': 1.7, 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true' }, ICONS[name].map(({ tag, ...attrs }) => svg(tag, attrs)));
 
 function notice(title, text) {
   clear(app).append(h('div', { class: 'notice' }, h('h1', {}, title), h('p', { class: 'muted' }, text)));
@@ -60,8 +83,9 @@ function header() {
   );
 }
 
-// ดาว 5 แฉก: ยังไม่เลือก = เส้นขอบ, เลือกแล้ว = เติมสี (ต่างกันที่รูปทรง ไม่ใช่สีอย่างเดียว)
-const STAR_PATH = 'M12 2.6l2.9 6.1 6.7.8-4.9 4.6 1.3 6.6L12 17.4 6 20.7l1.3-6.6L2.4 9.5l6.7-.8z';
+// หมูให้คะแนน = หมูตัวเดียวกับในโลโก้ (web/img/pig.png ตัดจากโลโก้ 160×160)
+// ยังไม่เลือก = สีเทาจาง, เลือกแล้ว = สีจริง + พื้นวงกลมชมพู (ต่างกันทั้งสีและความเข้ม ไม่ใช่สีอย่างเดียว)
+const pigIcon = () => h('img', { class: 'pig', src: '/img/pig.png', alt: '', width: 160, height: 160, decoding: 'async', draggable: 'false' });
 
 function renderRating(q, onChange) {
   const { min = 1, max = 5, labels = {} } = q.config ?? {};
@@ -71,10 +95,9 @@ function renderRating(q, onChange) {
   for (let v = min; v <= max; v++) {
     const id = `${q.key}-${v}`;
     const input = h('input', { type: 'radio', name: q.key, id, value: v, checked: current === v, 'aria-label': `${v} คะแนน` });
-    const icon = svg('svg', { viewBox: '0 0 24 24', 'aria-hidden': 'true' }, svg('path', { d: STAR_PATH }));
-    const star = h('div', { class: `star${v <= current ? ' on' : ''}` }, input, h('label', { for: id, 'aria-hidden': 'true' }, icon));
+    const star = h('div', { class: `star${v <= current ? ' on' : ''}` }, input, h('label', { for: id, 'aria-hidden': 'true' }, pigIcon()));
     input.addEventListener('change', () => {
-      // เติมสีทันทีทีละดวง (ดาวเด้งไล่จากดวงแรก) ก่อนค่อยไปข้อถัดไป
+      // เติมสีทันทีทีละตัว (หมูเด้งไล่จากตัวแรก) ก่อนค่อยไปข้อถัดไป
       stars.forEach((s, i) => {
         s.classList.toggle('on', i + min <= v);
         s.classList.remove('pop');
@@ -134,7 +157,7 @@ function renderChooser(choices = CHANNEL_CHOICES.filter((c) => state.byChannel?.
     h(
       'button',
       { type: 'button', class: `pick${state.channel === c.value ? ' on' : ''}`, onclick: () => pickChannel(c.value) },
-      h('span', { class: 'pick-icon', 'aria-hidden': 'true' }, c.icon),
+      h('span', { class: 'pick-icon', 'aria-hidden': 'true' }, icon(c.icon)),
       h('span', { class: 'pick-text' }, h('b', {}, c.title), h('small', {}, c.hint)),
       h('span', { class: 'pick-arrow', 'aria-hidden': 'true' }, '›'),
     ),
@@ -171,7 +194,7 @@ function render() {
   if (q.type === 'rating') {
     body = renderRating(q, (v) => {
       setAnswer(v);
-      // ให้คะแนนแล้วไปข้อถัดไปเอง (ข้อสุดท้ายรอให้กดส่ง) — เว้นจังหวะให้เห็นดาวเด้งก่อน
+      // ให้คะแนนแล้วไปข้อถัดไปเอง (ข้อสุดท้ายรอให้กดส่ง) — เว้นจังหวะให้เห็นหมูเด้งก่อน
       clearTimeout(advanceTimer);
       if (!last) advanceTimer = setTimeout(() => go(1), 650);
     });
@@ -187,7 +210,13 @@ function render() {
     body = renderText(q, q.type === 'long_text', setAnswer);
   }
 
-  const title = h('legend', {}, q.label, q.required ? h('span', { class: 'req', 'aria-label': 'จำเป็น' }, '*') : null);
+  // หัวข้อ (ไม่บังคับ เช่น "รสชาติ") อยู่เหนือเนื้อเรื่องคำถาม
+  const title = h(
+    'legend',
+    {},
+    q.title ? h('span', { class: 'q-title' }, q.title) : null,
+    h('span', { class: 'q-text' }, q.label, q.required ? h('span', { class: 'req', 'aria-label': 'จำเป็น' }, '*') : null),
+  );
   const honeypot = h('div', { class: 'hp', 'aria-hidden': 'true' }, h('label', {}, 'อย่ากรอกช่องนี้', h('input', { type: 'text', name: 'website', tabindex: '-1', autocomplete: 'off', oninput: (e) => (state.website = e.target.value) })));
 
   // ข้อแรกของ QR แบบเลือกเอง: ย้อนกลับไปเปลี่ยนช่องทางได้
@@ -233,7 +262,7 @@ async function submit(button, errorBox) {
     const answers = Object.fromEntries(Object.entries(state.answers).filter(([k]) => keys.has(k)));
     const body = { answers, website: state.website, ...(state.byChannel ? { channel: state.channel } : {}) };
     const result = await api(`/r/${encodeURIComponent(token)}/submit`, { method: 'POST', body });
-    done(result.thankYou ?? state.settings.thankYou);
+    done({ ...state.settings, thankYou: result.thankYou ?? state.settings.thankYou });
   } catch (err) {
     state.submitting = false;
     button.disabled = false;
@@ -257,10 +286,22 @@ async function submit(button, errorBox) {
   }
 }
 
-function done(message) {
-  clear(app).append(
-    h('div', { class: 'done card-like' }, logo(), h('div', { class: 'tick', 'aria-hidden': 'true' }, svg('svg', { viewBox: '0 0 24 24', fill: 'none', 'stroke-width': 2.4, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, svg('path', { d: 'M5 12.5l4.5 4.5L19 7.5' }))), h('h1', { class: 'grad-text' }, 'ขอบคุณค่ะ/ครับ'), h('p', { class: 'muted' }, message || 'ขอบคุณสำหรับความคิดเห็นของคุณ')),
-  );
+// ข้อความหลังส่ง (แอดมินแก้ได้ที่หน้าแก้ไขคำถาม) — ค่าเริ่มต้นเมื่อฟอร์มยังไม่ได้ตั้ง
+const DONE_DEFAULTS = {
+  sentTitle: 'ส่งความคิดเห็นเรียบร้อยแล้ว 💚',
+  thanksTitle: 'ขอบคุณที่ให้เหนียวหมูไส้แตกดูแลมื้อนี้ของคุณ',
+  thankYou: 'ความคิดเห็นของคุณจะช่วยให้เราปรับปรุงอาหารและบริการให้ดียิ่งขึ้น หวังว่าจะได้ดูแลคุณอีกครั้งในมื้อถัดไปนะคะ',
+};
+const SENT_MS = 1800;
+
+/** หลังส่ง: หน้า "ส่งเรียบร้อย" สั้นๆ แล้วเด้งไปหน้าขอบคุณสุดท้าย */
+function done(settings = {}) {
+  const text = (k) => settings[k]?.trim() || DONE_DEFAULTS[k];
+  const tick = h('div', { class: 'tick', 'aria-hidden': 'true' }, svg('svg', { viewBox: '0 0 24 24', fill: 'none', 'stroke-width': 2.4, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }, svg('path', { d: 'M5 12.5l4.5 4.5L19 7.5' })));
+  clear(app).append(h('div', { class: 'done card-like' }, h('div', { class: 'q-enter' }, tick, h('h1', { class: 'sent-title' }, text('sentTitle')))));
+  setTimeout(() => {
+    clear(app).append(h('div', { class: 'done card-like' }, h('div', { class: 'q-enter' }, logo(), h('h1', { class: 'grad-text thanks-title' }, text('thanksTitle')), h('p', { class: 'thanks-text' }, text('thankYou')))));
+  }, SENT_MS);
 }
 
 init();

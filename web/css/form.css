@@ -29,6 +29,9 @@
   font: 500 1.375rem/1.35 var(--font-serif); letter-spacing: -.005em; padding: 0; margin: 0 0 22px; text-align: center; width: 100%;
   text-wrap: balance;
 }
+.question > legend .q-title, .question > legend .q-text { display: block; }
+/* หัวข้อสั้น (เช่น "รสชาติ") เหนือเนื้อเรื่องคำถาม */
+.question > legend .q-title { font: 600 .9375rem/1.3 var(--font); letter-spacing: .02em; color: var(--accent-ink); margin-bottom: 8px; }
 .req { color: var(--accent-ink); margin-left: 4px; }
 
 /* หน้าเลือกช่องทาง (QR แบบลูกค้าเลือกเอง) — ปุ่มใหญ่เต็มความกว้าง กดง่ายด้วยนิ้ว */
@@ -41,14 +44,17 @@
 }
 .pick.on { border-color: var(--accent); background: var(--accent-soft); }
 .pick:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
-.pick-icon { font-size: 1.75rem; line-height: 1; flex: none; }
+.pick-icon { width: 52px; height: 52px; border-radius: 50%; display: grid; place-items: center; flex: none; background: var(--accent-soft); color: var(--accent-ink); transition: background-color .2s, color .2s; }
+.pick-icon svg { width: 30px; height: 30px; }
+.pick.on .pick-icon { background: var(--primary); color: var(--primary-ink); }
+@media (hover: hover) { .pick:hover .pick-icon { background: var(--primary); color: var(--primary-ink); } }
 .pick-text { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
 .pick-text b { font-size: 1.0625rem; font-weight: 600; }
 .pick-text small { font-size: .8125rem; color: var(--text-2); }
 .pick-arrow { font-size: 1.5rem; color: var(--accent-ink); flex: none; }
 @media (hover: hover) { .pick:hover { border-color: var(--accent); transform: translateY(-1px); } }
 
-/* ดาวให้คะแนน — radio จริงซ่อนไว้ ใช้ label เป็นปุ่มกลมใหญ่ (เส้นขอบ = ยังไม่เลือก, เติมสี = เลือกแล้ว) */
+/* หมูให้คะแนน (คลาสยังชื่อ .star) — radio จริงซ่อนไว้ ใช้ label เป็นปุ่มกลมใหญ่ (เส้นขอบ = ยังไม่เลือก, เติมสีชมพู = เลือกแล้ว) */
 .stars { display: flex; justify-content: center; gap: 6px; }
 .star { position: relative; flex: 1 1 0; max-width: 76px; }
 .star input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; z-index: 1; }
@@ -57,9 +63,9 @@
   border: 1px solid var(--border); background: var(--bg);
   transition: background-color .2s, border-color .2s, transform .3s cubic-bezier(.16, 1, .3, 1);
 }
-.star svg { width: 52%; height: 52%; fill: none; stroke: var(--star-off); stroke-width: 1.7; stroke-linejoin: round; transition: fill .2s, stroke .2s; }
-.star.on label { background: color-mix(in srgb, var(--accent) 12%, var(--surface)); border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
-.star.on svg { fill: var(--star); stroke: var(--star); }
+.star .pig { width: 74%; height: auto; pointer-events: none; filter: grayscale(1) opacity(.5); transition: filter .25s; }
+.star.on label { background: color-mix(in srgb, var(--pig) 26%, var(--surface)); border-color: color-mix(in srgb, var(--pig-ink) 45%, var(--border)); }
+.star.on .pig { filter: none; }
 .star input:focus-visible + label { outline: 3px solid var(--accent); outline-offset: 3px; }
 .scale-hint { display: flex; justify-content: space-between; margin: 12px 4px 0; font-size: .875rem; color: var(--text-2); }
 
@@ -87,6 +93,10 @@
   display: grid; place-items: center; background: var(--accent-soft); color: var(--accent-ink);
 }
 .tick svg { width: 46px; height: 46px; stroke: currentColor; }
+/* หน้าหลังส่ง: "ส่งเรียบร้อย" → หน้าขอบคุณ (ข้อความจากแอดมิน ขึ้นบรรทัดใหม่ได้) */
+.sent-title { font: 500 1.5rem/1.35 var(--font-serif); margin: 0; text-wrap: balance; }
+.thanks-title { font-size: 1.625rem; line-height: 1.35; margin: 0 0 12px; text-wrap: balance; }
+.thanks-text { margin: 0 auto; max-width: 30em; color: var(--text-2); line-height: 1.7; white-space: pre-line; text-wrap: pretty; }
 .notice { margin: auto; text-align: center; padding: 0 12px; }
 .notice h1 { font-size: 1.5rem; }
 
@@ -103,7 +113,7 @@
 
 @media (hover: hover) {
   .star label:hover { border-color: var(--accent); transform: translateY(-2px); }
-  .star label:hover svg { stroke: var(--star); }
+  .star label:hover .pig { filter: grayscale(.3) opacity(.8); }
   .choice label:hover { border-color: var(--accent); }
 }
 

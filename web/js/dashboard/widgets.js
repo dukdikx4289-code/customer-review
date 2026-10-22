@@ -11,61 +11,86 @@
  *   ลำดับในรายการ = ลำดับเริ่มต้น (ผู้ใช้ลากสลับเองได้ และเบราว์เซอร์จำไว้ให้)
  *   ถ้าแก้ id หรือเพิ่ม/ลบการ์ด ลำดับที่ผู้ใช้จำไว้จะถูกปรับให้อัตโนมัติ
  */
-import { h, formatDay, formatDateTime, formatNumber, formatPercent } from '../util.js';
-import { big, delta, rows, bars, spark, level } from './ui.js';
+import { h, formatDateTime, formatNumber, formatPercent } from '../util.js';
+import { big, delta, rows, bars } from './ui.js';
 
-const DAY_NAMES = ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส'];
 const CHANNEL_LABELS = { store: 'หน้าร้าน', online: 'ออนไลน์' };
 const channelTag = (c) => (CHANNEL_LABELS[c.channel] ? h('span', { class: 'ch-tag' }, CHANNEL_LABELS[c.channel]) : null);
-const dayName = (date) => DAY_NAMES[new Date(`${date}T00:00:00Z`).getUTCDay()];
 
-/** จำนวนรีวิว + minimap ความหนาแน่น 7 วัน x 24 ชั่วโมง */
+/** ตัวเลขสรุป: จำนวนรีวิว (เทียบช่วงก่อนหน้า) */
 function reviews(data) {
-  const peak = Math.max(1, ...data.activity.flatMap((d) => d.hours));
-  const nowHour = new Date(Date.now() + 7 * 3_600_000).getUTCHours();
-  const lastIdx = data.activity.length - 1;
-  const total = data.activity.reduce((a, d) => a + d.hours.reduce((x, y) => x + y, 0), 0);
-
-  const map = h('div', { class: 'minimap', role: 'img', 'aria-label': `จำนวนรีวิวรายชั่วโมงใน 7 วันล่าสุด รวม ${formatNumber(total, 0)} รีวิว` });
-  data.activity.forEach((d, i) => {
-    const cells = h('span', { class: 'cells' });
-    d.hours.forEach((n, hour) => {
-      const isNow = i === lastIdx && hour === nowHour;
-      const future = i === lastIdx && hour > nowHour;
-      cells.append(h('i', { class: `${future ? 'future' : `l${level(n, peak)}`}${isNow ? ' now' : ''}`, title: future ? undefined : `${formatDay(d.date)} ${String(hour).padStart(2, '0')}:00 · ${n} รีวิว` }));
-    });
-    map.append(h('span', { class: `day${i === lastIdx ? ' today' : ''}` }, i === lastIdx ? 'วันนี้' : dayName(d.date)), cells);
-  });
-  map.append(h('span', { class: 'day' }), h('span', { class: 'hours', 'aria-hidden': 'true' }, ['00', '06', '12', '18'].map((t) => h('span', {}, `${t}:00`))));
-
   return {
     meta: delta(data.totals.responses, data.previous?.responses, { suffix: 'เทียบช่วงก่อนหน้า' }),
-    body: [big(formatNumber(data.totals.responses, 0), 'รีวิว', { to: data.totals.responses }), h('div', { class: 'push' }, map)],
+    body: big(formatNumber(data.totals.responses, 0), 'รีวิว', { to: data.totals.responses }),
   };
 }
 
-/** % ความพึงพอใจ + แท่งคะแนนรายวัน 14 วันล่าสุด */
+/** ตัวเลขสรุป: % ความพึงพอใจ (ให้ 4–5 คะแนน) */
 function satisfaction(data) {
-  const days = data.trend.slice(-14);
-  const lo = data.primary?.min ?? 1;
   const hi = data.primary?.max ?? 5;
   return {
     meta: delta(data.totals.satisfactionRate, data.previous?.satisfactionRate, { mode: 'points', suffix: 'เทียบช่วงก่อนหน้า' }),
-    body: [
-      big(formatPercent(data.totals.satisfactionRate), '', data.totals.satisfactionRate == null ? undefined : { to: Math.round(data.totals.satisfactionRate * 100), suffix: '%' }),
-      h('p', { class: 'hint' }, `ให้ ${hi - 1}–${hi} คะแนน`),
-      h('div', { class: 'push' }, spark(days.map((d) => d.avg), { lo, hi, label: `คะแนนเฉลี่ยรายวัน ${days.length} วันล่าสุด` })),
-    ],
+    body: [big(formatPercent(data.totals.satisfactionRate), '', data.totals.satisfactionRate == null ? undefined : { to: Math.round(data.totals.satisfactionRate * 100), suffix: '%' }), h('p', { class: 'hint' }, `ให้ ${hi - 1}–${hi} คะแนน`)],
   };
 }
 
-/** คะแนนเฉลี่ยรวม + รายหัวข้อแบบแถวสั้น */
+/** ตัวเลขสรุป: คะแนนเฉลี่ย (หัวข้อความพึงพอใจ) */
 function average(data) {
   const max = data.primary?.max ?? 5;
   return {
     meta: delta(data.totals.primaryAvg, data.previous?.primaryAvg, { mode: 'abs' }),
-    body: [big(formatNumber(data.totals.primaryAvg), `/ ${max}`, data.totals.primaryAvg == null ? undefined : { to: data.totals.primaryAvg }), h('div', { class: 'push' }, rows(data.questions.map((q) => ({ label: q.label, value: formatNumber(q.avg) }))))],
+    body: [big(formatNumber(data.totals.primaryAvg), `/ ${max}`, data.totals.primaryAvg == null ? undefined : { to: data.totals.primaryAvg }), data.primary ? h('p', { class: 'hint' }, data.primary.label) : null],
   };
+}
+
+/** คำถามแบบเลือก เช่น "รู้จักเราจากช่องทางไหน" — แถบเรียงจากมากไปน้อย, % = สัดส่วนของคนที่ตอบข้อนั้น */
+function choices(data) {
+  const list = h('div', { class: 'choice-groups' });
+  for (const q of data.choices ?? []) {
+    const top = Math.max(1, ...q.options.map((o) => o.count));
+    const items = q.options.map((o, i) => ({ label: o.label, ratio: o.count / top, value: `${formatNumber(o.count, 0)} คน (${q.respondents ? Math.round((o.count / q.respondents) * 100) : 0}%)`, hot: i === 0 && o.count > 0 }));
+    list.append(h('section', { class: 'choice-group' }, h('div', { class: 'dist-group-head' }, h('b', {}, q.label), h('span', {}, `ตอบ ${formatNumber(q.respondents, 0)} คน${q.type === 'multi_choice' ? ' · เลือกได้หลายข้อ' : ''}`)), bars(items, q.label)));
+  }
+  return { body: list };
+}
+
+/** รีวิวล่าสุด — กดแต่ละรายการเพื่อดูคำตอบครบทุกข้อ */
+function recent(data, ctx) {
+  const list = h('ul', { class: 'rlist', 'aria-label': 'รีวิวล่าสุด' });
+  for (const r of data.recent ?? []) {
+    list.append(
+      h(
+        'li',
+        {},
+        h(
+          'button',
+          { type: 'button', class: 'rlist-item', onclick: (e) => ctx.openResponse?.(r.id, e.currentTarget) },
+          h('div', { class: 'meta' }, r.branch ? h('b', {}, r.branch) : null, channelTag(r), h('span', {}, formatDateTime(r.submittedAt)), r.avg != null ? h('span', { class: 'stars-inline', 'aria-label': `เฉลี่ย ${r.avg} ดาว` }, `★ ${formatNumber(r.avg, 1)}`) : null),
+          h('p', { class: `text${r.comment ? '' : ' muted'}` }, r.comment ?? 'ไม่มีข้อเสนอแนะ'),
+          h('span', { class: 'rlist-go', 'aria-hidden': 'true' }, '›'),
+        ),
+      ),
+    );
+  }
+  return { meta: 'กดเพื่อดูคำตอบทั้งหมด', body: (data.recent ?? []).length ? list : h('p', { class: 'empty-note' }, 'ยังไม่มีรีวิว') };
+}
+
+/** หน้าต่างรายละเอียดคำตอบ 1 รีวิว (ใช้กับ ctx.openResponse ใน dashboard-view.js) */
+export function responseDetailBody(d) {
+  const item = (it) => {
+    let value;
+    if (it.value == null) value = h('span', { class: 'muted' }, '— ไม่ได้ตอบ');
+    else if (it.type === 'rating') value = h('span', { class: `score-chip s${Math.min(5, Math.max(1, Math.round((Number(it.value) / (it.max || 5)) * 5)))}` }, `${formatNumber(it.value, 0)} / ${it.max || 5} ★`);
+    else if (Array.isArray(it.value)) value = h('span', { class: 'chips' }, it.value.map((v) => h('span', { class: 'chip' }, v)));
+    else value = h('span', { class: it.type === 'long_text' || it.type === 'short_text' ? 'answer-text' : '' }, String(it.value));
+    return h('div', { class: `ans ${it.type}` }, h('dt', {}, it.label), h('dd', {}, value));
+  };
+  return h(
+    'div',
+    { class: 'stack' },
+    h('p', { class: 'muted small' }, [d.branch, CHANNEL_LABELS[d.channel], formatDateTime(d.submittedAt), d.link ? `ผ่าน ${d.link}` : null, `#${d.id}`].filter(Boolean).join(' · ')),
+    h('dl', { class: 'answers' }, d.items.map(item)),
+  );
 }
 
 /**
@@ -93,24 +118,28 @@ function starMeter(avg, max = 5) {
  * เปรียบเทียบสาขาด้วย "ดาวรวม" (เฉลี่ยทุกคะแนนดาวของสาขา) — ใช้ได้แม้แต่ละสาขาใช้ฟอร์มต่างกัน
  * เรียงจากดาวสูงไปต่ำ · แถบสีเล็กใต้ชื่อ = สัดส่วน 5★→1★ ของสาขานั้น
  */
-function branchStars(data) {
+function branchStars(data, ctx) {
   const rows = data.branchStars ?? [];
   if (!rows.length) return { body: h('p', { class: 'empty-note' }, 'ยังไม่มีสาขา') };
   const list = h('ol', { class: 'bstars', 'aria-label': 'อันดับดาวรวมรายสาขา' });
   rows.forEach((b, i) => {
     const dist = { label: b.name, min: 1, max: 5, distribution: [...b.distribution].reverse() };
+    // กดชื่อสาขา → กรอง Dashboard เฉพาะสาขานั้น (เฉพาะหน้าที่มีตัวเลือกสาขา)
+    const name = ctx.selectBranch
+      ? h('button', { type: 'button', class: 'linkish', title: `ดูเฉพาะ ${b.name}`, onclick: () => ctx.selectBranch(b.id) }, b.name)
+      : h('b', { title: b.name }, b.name);
     list.append(
       h(
         'li',
         { class: b.avg != null && b.avg < 3.5 && b.ratings >= 3 ? 'low' : '' },
         h('span', { class: 'rank' }, b.avg == null ? '–' : String(i + 1)),
-        h('div', { class: 'who' }, h('b', { title: b.name }, b.name), h('span', {}, `${formatNumber(b.responses, 0)} รีวิว`)),
+        h('div', { class: 'who' }, name, h('span', {}, `${formatNumber(b.responses, 0)} รีวิว`)),
         h('div', { class: 'score' }, starMeter(b.avg), h('b', {}, b.avg == null ? '–' : formatNumber(b.avg, 2))),
         b.ratings ? h('div', { class: 'mini' }, distBar(dist)) : h('div', { class: 'mini muted small' }, 'ยังไม่มีรีวิว'),
       ),
     );
   });
-  return { meta: 'ดาวรวมทุกหัวข้อ · ⤢ ดูรายหัวข้อ', body: list };
+  return { meta: ctx.selectBranch ? 'กดชื่อสาขาเพื่อดูเฉพาะสาขา · ⤢ ดูรายหัวข้อ' : 'ดาวรวมทุกหัวข้อ · ⤢ ดูรายหัวข้อ', body: list };
 }
 
 /** มุมมองขยาย: ตารางสาขา x หัวข้อ กดหัวคอลัมน์เพื่อเรียงลำดับ */
@@ -142,30 +171,6 @@ function branchesExpanded(data) {
   }
   draw();
   return { body: holder };
-}
-
-/** มุมมองขยาย: ข้อเสนอแนะทั้งหมด กรองตามคะแนนได้ */
-function commentsExpanded(data) {
-  const holder = h('div', {});
-  const filters = { all: 'ทั้งหมด', low: '1–2 ดาว', mid: '3 ดาว', high: '4–5 ดาว' };
-  const match = { all: () => true, low: (s) => s != null && s <= 2, mid: (s) => s === 3, high: (s) => s != null && s >= 4 };
-  let current = 'all';
-  function draw() {
-    const items = data.comments.filter((c) => match[current](c.score));
-    const bar = h('div', { class: 'seg', role: 'group', 'aria-label': 'กรองตามคะแนน' }, Object.entries(filters).map(([key, label]) => h('button', { type: 'button', 'aria-pressed': String(key === current), onclick: () => ((current = key), draw()) }, label)));
-    const list = h('ul', { class: 'clist full' });
-    for (const c of items) list.append(h('li', {}, h('div', { class: 'meta' }, c.branch ? h('b', {}, c.branch) : null, channelTag(c), h('span', {}, formatDateTime(c.submittedAt)), c.score != null ? h('span', { class: 'stars-inline', 'aria-label': `${c.score} คะแนน` }, '★'.repeat(Math.round(c.score))) : null), h('p', { class: 'text' }, c.text)));
-    holder.replaceChildren(bar, items.length ? list : h('p', { class: 'muted' }, 'ไม่มีข้อเสนอแนะในกลุ่มนี้'));
-  }
-  draw();
-  return { body: holder };
-}
-
-/** คะแนนรายหัวข้อ */
-function questions(data) {
-  const max = data.primary?.max ?? 5;
-  const items = data.questions.map((q, i) => ({ label: q.label, ratio: (q.avg ?? 0) / max, value: formatNumber(q.avg), hot: i === 0 }));
-  return { meta: `จาก ${max}`, body: h('div', { class: 'push' }, bars(items, 'คะแนนเฉลี่ยรายหัวข้อ')) };
 }
 
 /**
@@ -217,7 +222,7 @@ function distGroup(g, opts) {
 
 function distribution(data) {
   const groups = distGroups(data);
-  return { meta: distLegend(data.primary?.min, data.primary?.max), body: h('div', { class: 'push dist-groups' }, groups.map((g) => distGroup(g))) };
+  return { meta: distLegend(data.primary?.min, data.primary?.max), body: h('div', { class: 'dist-groups' }, groups.map((g) => distGroup(g))) };
 }
 
 /** มุมมองขยาย: แถบสี + ตารางจำนวนคนต่อดาว (ตัวเลขจริง + %) แยกตามช่องทาง */
@@ -247,35 +252,37 @@ function distributionExpanded(data) {
   return { body: h('div', { class: 'stack' }, distLegend(lo, hi), distGroups(data).map((g) => h('div', { class: 'stack' }, distGroup(g, { brief: false }), groupTotal(g) ? table(g) : null))) };
 }
 
-/** จุดที่ต้องแก้ไข (หัวข้อ x สาขาที่เฉลี่ยต่ำกว่าเกณฑ์) */
+/** จุดที่ต้องแก้ไข (หัวข้อ x สาขาที่เฉลี่ยต่ำกว่าเกณฑ์) — การ์ดเล็กเท่าการ์ดตัวเลข: จำนวน + จุดที่แย่สุด, ⤢ ดูทั้งหมด */
+const ATTENTION_RULE = 'เฉลี่ย < 3.5 และมี ≥ 3 รีวิว';
 function attention(data) {
-  const top = data.attention.slice(0, 4);
+  const worst = data.attention[0];
   return {
-    meta: 'เฉลี่ย < 3.5 และมี ≥ 3 รีวิว',
     body: [
       big(formatNumber(data.attention.length, 0), 'จุด', { to: data.attention.length }),
-      h('div', { class: 'push' }, top.length ? rows(top.map((a) => ({ tone: 'err', label: `${a.branch} · ${a.question}`, value: formatNumber(a.avg) }))) : h('p', { class: 'ok-note' }, '✓ ทุกสาขาอยู่เหนือเกณฑ์')),
+      worst
+        ? h('p', { class: 'hint worst', title: `${worst.branch} · ${worst.question}` }, h('span', { class: 'dot err' }), h('span', { class: 't' }, `แย่สุด ${worst.branch} · ${worst.question}`), h('b', {}, formatNumber(worst.avg)))
+        : h('p', { class: 'ok-note' }, '✓ ทุกสาขาอยู่เหนือเกณฑ์'),
+      h('p', { class: 'hint' }, data.attention.length > 1 ? `${ATTENTION_RULE} · ⤢ ดูทั้งหมด` : ATTENTION_RULE),
     ],
   };
 }
 
-/** ข้อเสนอแนะล่าสุด (แสดงด้วย textContent เท่านั้น — ข้อความจากลูกค้าจึงไม่ถูกตีความเป็น HTML) */
-function comments(data) {
-  const list = h('ul', { class: 'clist', 'aria-label': 'ข้อเสนอแนะล่าสุด' });
-  for (const c of data.comments.slice(0, 12)) {
-    list.append(h('li', {}, h('div', { class: 'meta' }, c.branch ? h('b', {}, c.branch) : null, channelTag(c), h('span', {}, formatDateTime(c.submittedAt)), c.score != null ? h('span', { class: 'stars-inline', 'aria-label': `${c.score} คะแนน` }, '★'.repeat(Math.round(c.score))) : null), h('p', { class: 'text' }, c.text)));
-  }
-  return { meta: `${data.comments.length} ล่าสุด`, body: data.comments.length ? list : h('p', { class: 'empty-note' }, 'ยังไม่มีข้อเสนอแนะเป็นข้อความ') };
+function attentionExpanded(data) {
+  return {
+    meta: ATTENTION_RULE,
+    body: data.attention.length ? rows(data.attention.map((a) => ({ tone: 'err', label: `${a.branch} · ${a.question}`, value: formatNumber(a.avg) }))) : h('p', { class: 'ok-note' }, '✓ ทุกสาขาอยู่เหนือเกณฑ์'),
+  };
 }
 
 // expanded (ไม่บังคับ) = มุมมองเต็มในหน้าต่างโมดอลเมื่อกดปุ่ม ⤢ ถ้าไม่ใส่ จะใช้ render เดิมแสดงในกล่องใหญ่
+// when (ไม่บังคับ) = แสดงการ์ดเฉพาะเมื่อมีข้อมูล (เช่น ฟอร์มไม่มีคำถามแบบเลือก ก็ไม่ต้องมีการ์ด "รู้จักเราจาก")
 export const WIDGETS = [
-  { id: 'reviews', size: 'wide', title: 'จำนวนรีวิว', render: reviews },
+  { id: 'reviews', size: 'sm', title: 'จำนวนรีวิว', render: reviews },
   { id: 'satisfaction', size: 'sm', title: 'ความพึงพอใจ', render: satisfaction },
   { id: 'average', size: 'sm', title: 'คะแนนเฉลี่ย', render: average },
-  { id: 'branches', size: 'lg', title: 'เปรียบเทียบสาขา (ดาวรวม)', render: branchStars, expanded: branchesExpanded },
-  { id: 'questions', size: 'wide', title: 'คะแนนรายหัวข้อ', render: questions },
-  { id: 'distribution', size: 'lg', title: 'การกระจายคะแนนรายหัวข้อ', render: distribution, expanded: distributionExpanded },
-  { id: 'comments', size: 'lg', title: 'ข้อเสนอแนะล่าสุด', render: comments, expanded: commentsExpanded },
-  { id: 'attention', size: 'wide', title: 'จุดที่ต้องแก้ไข', render: attention },
+  { id: 'attention', size: 'sm', title: 'จุดที่ต้องแก้ไข', render: attention, expanded: attentionExpanded },
+  { id: 'branches', size: 'wide', title: 'เปรียบเทียบสาขา (ดาวรวม)', render: branchStars, expanded: branchesExpanded },
+  { id: 'recent', size: 'wide', title: 'รีวิวล่าสุด', render: recent },
+  { id: 'distribution', size: 'wide', title: 'การกระจายคะแนนรายหัวข้อ', render: distribution, expanded: distributionExpanded },
+  { id: 'choices', size: 'wide', title: 'รู้จักเรา / ตัวเลือกที่ลูกค้าตอบ', render: choices, when: (data) => (data.choices ?? []).length > 0 },
 ];

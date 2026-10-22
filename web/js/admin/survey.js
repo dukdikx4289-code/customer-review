@@ -3,7 +3,7 @@ import { h, clear, formatDateTime, toast } from '../util.js';
 import { openModal } from '../ui/modal.js';
 
 const TYPE_LABELS = {
-  rating: 'ให้คะแนน (ดาว 1–5)',
+  rating: 'ให้คะแนน (หมู 1–5)',
   single_choice: 'เลือกตอบข้อเดียว',
   multi_choice: 'เลือกได้หลายข้อ',
   short_text: 'ข้อความสั้น',
@@ -16,6 +16,13 @@ const CHANNELS = [
 ];
 const VIEWS = [['all', 'ทั้งหมด'], ...CHANNELS];
 
+// ข้อความหลังส่ง — ต้องตรงกับค่าเริ่มต้นใน js/form.js (ฟอร์มที่ยังไม่ได้ตั้งจะเห็นข้อความนี้)
+const DONE_FIELDS = [
+  ['sentTitle', 'หน้าส่งสำเร็จ (ขึ้นสั้นๆ ก่อนเด้งไปหน้าขอบคุณ)', 'ส่งความคิดเห็นเรียบร้อยแล้ว 💚', 120],
+  ['thanksTitle', 'หน้าขอบคุณ: หัวข้อ', 'ขอบคุณที่ให้เหนียวหมูไส้แตกดูแลมื้อนี้ของคุณ', 200],
+  ['thankYou', 'หน้าขอบคุณ: ข้อความ', 'ความคิดเห็นของคุณจะช่วยให้เราปรับปรุงอาหารและบริการให้ดียิ่งขึ้น หวังว่าจะได้ดูแลคุณอีกครั้งในมื้อถัดไปนะคะ', 600],
+];
+
 const rand = () => Math.random().toString(36).slice(2, 7);
 
 // ไม่ระบุช่องทาง (คำถามจากเวอร์ชันเก่า) = แสดงทั้งสองช่องทาง
@@ -23,7 +30,7 @@ const channelsOf = (q) => (Array.isArray(q.channels) && q.channels.length ? q.ch
 
 function newQuestion(type, view) {
   const channels = view === 'all' ? CHANNELS.map(([c]) => c) : [view];
-  const base = { key: `q_${rand()}${rand()}`, type, label: '', required: false, channels, config: {}, isNew: true };
+  const base = { key: `q_${rand()}${rand()}`, type, title: '', label: '', required: false, channels, config: {}, isNew: true };
   if (type === 'rating') base.config = { min: 1, max: 5, labels: { 1: 'ควรปรับปรุง', 5: 'ดีเยี่ยม' } };
   if (type === 'single_choice' || type === 'multi_choice') base.config = { options: [{ value: `o_${rand()}`, label: 'ตัวเลือก 1' }, { value: `o_${rand()}`, label: 'ตัวเลือก 2' }] };
   if (type === 'long_text') base.config = { maxLength: 1000 };
@@ -39,7 +46,8 @@ export async function surveyView({ param } = {}) {
   const data = await api(`/admin/survey${branchId ? `?branch_id=${branchId}` : ''}`);
   let questions = structuredClone(data.questions);
   let title = data.title;
-  let thankYou = data.settings?.thankYou ?? '';
+  // ข้อความหลังส่ง: ยังไม่ได้ตั้ง → ใส่ค่าเริ่มต้นให้แก้ต่อได้เลย
+  const doneTexts = Object.fromEntries(DONE_FIELDS.map(([k, , def]) => [k, data.settings?.[k] ?? def]));
   let view = 'all'; // ดูชุดคำถามที่ลูกค้าแต่ละช่องทางเห็น
   const holder = h('div', {});
   for (const q of questions) q.channels = channelsOf(q);
@@ -52,7 +60,8 @@ export async function surveyView({ param } = {}) {
   }
 
   function questionCard(q, i) {
-    const label = h('input', { type: 'text', value: q.label, maxlength: 200, 'aria-label': 'คำถาม', oninput: (e) => (q.label = e.target.value) });
+    const qTitle = h('input', { type: 'text', value: q.title ?? '', maxlength: 60, placeholder: 'เช่น รสชาติ', oninput: (e) => (q.title = e.target.value) });
+    const label = h('input', { type: 'text', value: q.label, maxlength: 200, placeholder: 'เช่น คุณพึงพอใจกับรสชาติอาหารครั้งนี้เพียงใด', oninput: (e) => (q.label = e.target.value) });
     const required = h('input', { type: 'checkbox', checked: q.required, onchange: (e) => (q.required = e.target.checked) });
     const channelBoxes = CHANNELS.map(([value, text]) =>
       h(
@@ -103,7 +112,7 @@ export async function surveyView({ param } = {}) {
       'article',
       { class: 'card q-edit' },
       h('div', { class: 'head' }, h('div', {}, h('strong', {}, `ข้อ ${i + 1}`), ' ', h('span', { class: 'badge' }, TYPE_LABELS[q.type]), ' ', h('span', { class: 'key', title: 'รหัสภายในของคำถาม คงที่ข้ามเวอร์ชันเพื่อให้เทรนด์ต่อเนื่อง' }, q.key)), h('div', { class: 'row' }, h('button', { class: 'btn small', type: 'button', disabled: view !== 'all' || i === 0, title: view !== 'all' ? 'จัดลำดับได้ในมุมมอง "ทั้งหมด"' : undefined, 'aria-label': 'เลื่อนขึ้น', onclick: () => move(i, -1) }, '↑'), h('button', { class: 'btn small', type: 'button', disabled: view !== 'all' || i === questions.length - 1, title: view !== 'all' ? 'จัดลำดับได้ในมุมมอง "ทั้งหมด"' : undefined, 'aria-label': 'เลื่อนลง', onclick: () => move(i, 1) }, '↓'), h('button', { class: 'btn small danger', type: 'button', onclick: () => { if (confirm('ลบคำถามนี้ออกจากฟอร์ม?\n(คำตอบที่เก็บไปแล้วยังอยู่ครบ)')) { questions.splice(i, 1); draw(); } } }, 'ลบ'))),
-      h('label', { class: 'field' }, h('span', {}, 'ข้อความคำถาม'), label),
+      h('div', { class: 'q-texts' }, h('label', { class: 'field' }, h('span', {}, 'หัวข้อ (ไม่บังคับ · ใช้เป็นชื่อใน Dashboard)'), qTitle), h('label', { class: 'field' }, h('span', {}, 'เนื้อเรื่อง (คำถามที่ลูกค้าเห็น)'), label)),
       ...extras,
       h('div', { class: 'row q-flags' }, h('span', { class: 'muted small' }, 'แสดงในช่องทาง:'), ...channelBoxes, h('span', { class: 'q-sep', 'aria-hidden': 'true' }), h('label', { class: 'check' }, required, 'บังคับตอบ')),
     );
@@ -116,7 +125,7 @@ export async function surveyView({ param } = {}) {
     publish.addEventListener('click', async () => {
       error.classList.add('hidden');
       if (questions.some((q) => !q.label.trim())) {
-        error.textContent = 'มีคำถามที่ยังไม่ได้ใส่ข้อความ';
+        error.textContent = 'มีคำถามที่ยังไม่ได้ใส่เนื้อเรื่อง';
         return error.classList.remove('hidden');
       }
       const msg = data.branch
@@ -125,8 +134,9 @@ export async function surveyView({ param } = {}) {
       if (!confirm(msg)) return;
       publish.disabled = true;
       try {
-        const clean = questions.map(({ isNew, ...q }) => ({ ...q, label: q.label.trim() }));
-        await api('/admin/survey/publish', { method: 'POST', body: { title: data.branch ? undefined : title, branchId: data.branch?.id ?? null, questions: clean, settings: { ...data.settings, thankYou: thankYou.trim() || undefined } } });
+        const clean = questions.map(({ isNew, ...q }) => ({ ...q, title: q.title?.trim() || undefined, label: q.label.trim() }));
+        const texts = Object.fromEntries(DONE_FIELDS.map(([k]) => [k, doneTexts[k].trim() || undefined]));
+        await api('/admin/survey/publish', { method: 'POST', body: { title: data.branch ? undefined : title, branchId: data.branch?.id ?? null, questions: clean, settings: { ...data.settings, ...texts } } });
         toast('เผยแพร่แล้ว');
         location.reload();
       } catch (err) {
@@ -148,10 +158,21 @@ export async function surveyView({ param } = {}) {
       ? h('p', { class: 'muted small' }, `ชื่อแบบสอบถาม "${title}" ใช้ร่วมกันทุกสาขา (แก้ได้ที่ "แม่แบบสำหรับสาขาใหม่")`)
       : h('label', { class: 'field' }, h('span', {}, 'ชื่อแบบสอบถาม'), h('input', { type: 'text', value: title, maxlength: 200, oninput: (e) => (title = e.target.value) }));
     clear(holder).append(
-      h('section', { class: 'card stack' }, titleField, h('label', { class: 'field' }, h('span', {}, 'ข้อความขอบคุณหลังส่ง'), h('input', { type: 'text', value: thankYou, maxlength: 200, oninput: (e) => (thankYou = e.target.value) }))),
+      h('section', { class: 'card stack' }, titleField),
       h('div', { class: 'row between section' }, viewSeg, h('span', { class: 'muted small' }, view === 'all' ? 'ข้อที่อยู่ทั้งสองช่องทางรวมสถิติกันได้' : `ลำดับที่ลูกค้า${VIEWS.find(([v]) => v === view)[1]}เห็น`)),
       h('div', { class: 'list section' }, visible.length ? visible.map(([q, i]) => questionCard(q, i)) : h('p', { class: 'muted' }, 'ยังไม่มีคำถามในช่องทางนี้')),
       h('div', { class: 'card row section' }, typeSel, h('button', { class: 'btn', type: 'button', onclick: () => { questions.push(newQuestion(typeSel.value, view)); draw(); window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }); } }, view === 'all' ? '+ เพิ่มคำถาม (ทั้งสองช่องทาง)' : `+ เพิ่มคำถาม (${VIEWS.find(([v]) => v === view)[1]})`)),
+      h(
+        'section',
+        { class: 'card stack section' },
+        h('h2', {}, 'ข้อความหลังลูกค้าส่ง'),
+        h('p', { class: 'muted small' }, `ขึ้น "หน้าส่งสำเร็จ" ประมาณ 2 วินาที แล้วเด้งไปหน้าขอบคุณ · เว้นว่าง = ใช้ข้อความเริ่มต้น`),
+        DONE_FIELDS.map(([k, text, def, max]) => {
+          const input = h(k === 'thankYou' ? 'textarea' : 'input', { maxlength: max, placeholder: def, ...(k === 'thankYou' ? { rows: 3 } : { type: 'text' }), oninput: (e) => (doneTexts[k] = e.target.value) });
+          input.value = doneTexts[k];
+          return h('label', { class: 'field' }, h('span', {}, text), input);
+        }),
+      ),
       error,
       h('div', { class: 'row section' }, publish, h('span', { class: 'muted small' }, `ปัจจุบันใช้เวอร์ชัน ${data.version}`)),
       h('details', { class: 'table-view section' }, h('summary', {}, 'ประวัติเวอร์ชัน'), h('ul', {}, data.versions.map((v) => h('li', {}, `เวอร์ชัน ${v.version_no} — ${formatDateTime(v.published_at)}`)))),
