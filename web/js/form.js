@@ -7,8 +7,13 @@ initEffects();
 const app = document.getElementById('app');
 const token = tokenFromPath();
 
-const state = { survey: null, branch: null, channel: null, questions: [], settings: {}, answers: {}, index: 0, website: '', submitting: false };
+// byChannel = มีเมื่อเป็น QR แบบ "ลูกค้าเลือกเอง": คำถามของแต่ละช่องทาง (ลูกค้าเลือกก่อนแล้วค่อยตอบ)
+const state = { survey: null, branch: null, channel: null, byChannel: null, questions: [], settings: {}, answers: {}, index: 0, website: '', submitting: false };
 const CHANNEL_LABELS = { store: 'หน้าร้าน', online: 'ออนไลน์' };
+const CHANNEL_CHOICES = [
+  { value: 'store', icon: '🏪', title: 'ทาน / ซื้อที่หน้าร้าน', hint: 'มาที่ร้านด้วยตัวเอง' },
+  { value: 'online', icon: '🛵', title: 'สั่งออนไลน์ / เดลิเวอรี่', hint: 'สั่งผ่านแอป แชต หรือโทรสั่ง' },
+];
 
 function notice(title, text) {
   clear(app).append(h('div', { class: 'notice' }, h('h1', {}, title), h('p', { class: 'muted' }, text)));
@@ -19,6 +24,14 @@ async function init() {
     const data = await api(`/r/${encodeURIComponent(token)}`);
     Object.assign(state, { survey: data.survey, branch: data.branch, channel: data.channel ?? null, questions: data.questions, settings: data.settings ?? {} });
     document.title = data.survey.title;
+    if (data.channelChoice) {
+      // แสดงเฉพาะช่องทางที่มีคำถาม — ถ้าเหลือช่องทางเดียวก็ข้ามหน้าเลือกไปเลย
+      const usable = CHANNEL_CHOICES.filter((c) => data.questionsByChannel?.[c.value]?.length);
+      state.byChannel = data.questionsByChannel;
+      state.channel = null; // data.channel = ค่าสำรองสำหรับหน้าเว็บเก่า — หน้าเลือกต้องยังไม่เลือกอะไร
+      if (usable.length === 1) return pickChannel(usable[0].value);
+      if (usable.length > 1) return renderChooser(usable);
+    }
     render();
   } catch (err) {
     if (err instanceof ApiError && err.status === 404) notice('ลิงก์นี้ใช้งานไม่ได้', 'ลิงก์อาจหมดอายุหรือถูกยกเลิกแล้ว กรุณาสแกน QR code ใหม่ หรือสอบถามพนักงาน');
@@ -114,6 +127,35 @@ function renderText(q, long, onInput) {
 
 let advanceTimer = null;
 
+/** หน้าแรกของ QR แบบเลือกเอง: "ครั้งนี้สั่งแบบไหน?" — ปุ่มใหญ่กดง่ายบนมือถือ */
+function renderChooser(choices = CHANNEL_CHOICES.filter((c) => state.byChannel?.[c.value]?.length)) {
+  clearTimeout(advanceTimer);
+  const buttons = choices.map((c) =>
+    h(
+      'button',
+      { type: 'button', class: `pick${state.channel === c.value ? ' on' : ''}`, onclick: () => pickChannel(c.value) },
+      h('span', { class: 'pick-icon', 'aria-hidden': 'true' }, c.icon),
+      h('span', { class: 'pick-text' }, h('b', {}, c.title), h('small', {}, c.hint)),
+      h('span', { class: 'pick-arrow', 'aria-hidden': 'true' }, '›'),
+    ),
+  );
+  clear(app).append(
+    h(
+      'div',
+      { class: 'card-like chooser' },
+      h('header', { class: 'top' }, logo(), h('p', { class: 'eyebrow' }, state.branch ? state.branch.name : state.survey.title), h('p', { class: 'brand' }, state.branch ? state.survey.title : '')),
+      h('div', { class: 'q-wrap' }, h('div', { class: 'question q-enter', role: 'group', 'aria-labelledby': 'pick-title' }, h('h1', { class: 'pick-title', id: 'pick-title' }, 'ครั้งนี้สั่งแบบไหน?'), h('div', { class: 'picks' }, buttons))),
+    ),
+  );
+}
+
+function pickChannel(channel) {
+  if (state.channel !== channel) state.index = 0;
+  state.channel = channel;
+  state.questions = state.byChannel[channel];
+  render();
+}
+
 function render() {
   clearTimeout(advanceTimer);
   const q = state.questions[state.index];
@@ -148,7 +190,13 @@ function render() {
   const title = h('legend', {}, q.label, q.required ? h('span', { class: 'req', 'aria-label': 'จำเป็น' }, '*') : null);
   const honeypot = h('div', { class: 'hp', 'aria-hidden': 'true' }, h('label', {}, 'อย่ากรอกช่องนี้', h('input', { type: 'text', name: 'website', tabindex: '-1', autocomplete: 'off', oninput: (e) => (state.website = e.target.value) })));
 
-  const back = state.index > 0 ? h('button', { type: 'button', class: 'btn ghost', onclick: () => go(-1) }, '‹ ย้อนกลับ') : null;
+  // ข้อแรกของ QR แบบเลือกเอง: ย้อนกลับไปเปลี่ยนช่องทางได้
+  const back =
+    state.index > 0
+      ? h('button', { type: 'button', class: 'btn ghost', onclick: () => go(-1) }, '‹ ย้อนกลับ')
+      : state.byChannel
+        ? h('button', { type: 'button', class: 'btn ghost', onclick: () => renderChooser() }, '‹ เปลี่ยนช่องทาง')
+        : null;
   const skippable = !q.required && !last && q.type === 'rating';
   const next = h(
     'button',
@@ -180,7 +228,11 @@ async function submit(button, errorBox) {
   button.disabled = true;
   button.textContent = 'กำลังส่ง…';
   try {
-    const result = await api(`/r/${encodeURIComponent(token)}/submit`, { method: 'POST', body: { answers: state.answers, website: state.website } });
+    // ส่งเฉพาะคำตอบของคำถามในช่องทางที่เลือก (ถ้าลูกค้าเปลี่ยนช่องทางกลางทาง คำตอบเก่าของอีกช่องทางไม่ติดไป)
+    const keys = new Set(state.questions.map((q) => q.key));
+    const answers = Object.fromEntries(Object.entries(state.answers).filter(([k]) => keys.has(k)));
+    const body = { answers, website: state.website, ...(state.byChannel ? { channel: state.channel } : {}) };
+    const result = await api(`/r/${encodeURIComponent(token)}/submit`, { method: 'POST', body });
     done(result.thankYou ?? state.settings.thankYou);
   } catch (err) {
     state.submitting = false;

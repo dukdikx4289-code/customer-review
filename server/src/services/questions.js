@@ -9,6 +9,9 @@ export const CHANNEL_LABELS = { store: 'หน้าร้าน', online: 'อ�
 
 export const normalizeChannel = (value) => (CHANNELS.includes(value) ? value : null);
 
+// ช่องทางของลิงก์ลูกค้า: ผูกช่องทางไว้ หรือ 'choose' = QR เดียว ให้ลูกค้าเลือกเองตอนสแกน
+export const LINK_CHANNELS = [...CHANNELS, 'choose'];
+
 export const inChannel = (q, channel) => !Array.isArray(q.channels) || q.channels.length === 0 || q.channels.includes(channel);
 
 /** คำถามที่แสดงในช่องทางนี้ (เรียงตามลำดับเดิม) */

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db } from '../db/knex.js';
 import { resolveLink, getLatestVersion } from '../services/links.js';
-import { validateAnswers, questionsForChannel, normalizeChannel } from '../services/questions.js';
+import { validateAnswers, questionsForChannel, normalizeChannel, CHANNELS } from '../services/questions.js';
 import { badTokenLimiter, submitLimiter } from '../middleware/rateLimit.js';
 
 export const publicRouter = Router();
@@ -21,23 +21,32 @@ async function loadContext(token) {
   const version = await getLatestVersion(survey.id, { branchId: link.branch_id });
   if (!version) return null;
 
-  // ลิงก์ลูกค้าผูกช่องทาง (หน้าร้าน/ออนไลน์) — ลูกค้าเห็นเฉพาะคำถามของช่องทางนั้น
-  const channel = normalizeChannel(link.channel) ?? 'store';
-  return { link, branch, survey, version, channel, questions: questionsForChannel(version.questions, channel) };
+  // ลิงก์ผูกช่องทาง (หน้าร้าน/ออนไลน์) หรือ 'choose' = QR เดียว ลูกค้าเลือกช่องทางเองตอนสแกน
+  const choose = link.channel === 'choose';
+  const fixed = choose ? null : normalizeChannel(link.channel) ?? 'store';
+  const questionsOf = (channel) => questionsForChannel(version.questions, channel);
+  return { link, branch, survey, version, choose, fixed, questionsOf };
 }
+
+const publicQuestions = (list) => list.map(({ channels, ...q }) => q);
 
 // ข้อมูลที่ฟอร์มลูกค้าต้องใช้ — ไม่ส่ง id ภายในออกไป
 publicRouter.get('/r/:token', badTokenLimiter, async (req, res) => {
   const ctx = await loadContext(req.params.token);
   if (!ctx) return notFound(res);
 
-  res.json({
-    survey: { title: ctx.survey.title },
-    branch: ctx.branch ? { name: ctx.branch.name } : null,
-    channel: ctx.channel,
-    questions: ctx.questions.map(({ channels, ...q }) => q),
-    settings: ctx.version.settings,
-  });
+  const base = { survey: { title: ctx.survey.title }, branch: ctx.branch ? { name: ctx.branch.name } : null, settings: ctx.version.settings };
+  if (ctx.choose) {
+    // questions/channel = ชุดหน้าร้าน เผื่อหน้าเว็บเวอร์ชันเก่าที่ยังไม่รู้จักหน้าเลือก (ระหว่าง deploy)
+    return res.json({
+      ...base,
+      channel: 'store',
+      channelChoice: true,
+      questions: publicQuestions(ctx.questionsOf('store')),
+      questionsByChannel: Object.fromEntries(CHANNELS.map((c) => [c, publicQuestions(ctx.questionsOf(c))])),
+    });
+  }
+  res.json({ ...base, channel: ctx.fixed, questions: publicQuestions(ctx.questionsOf(ctx.fixed)) });
 });
 
 publicRouter.post('/r/:token/submit', badTokenLimiter, submitLimiter, async (req, res) => {
@@ -51,7 +60,9 @@ publicRouter.post('/r/:token/submit', badTokenLimiter, submitLimiter, async (req
     return res.status(201).json({ ok: true });
   }
 
-  const result = validateAnswers(ctx.questions, body.answers);
+  // QR แบบเลือกเอง: ใช้ช่องทางที่ลูกค้าเลือก (ไม่ส่งมา = หน้าร้าน รองรับหน้าเว็บเก่า) · ลิงก์ผูกช่องทาง: ใช้ของลิงก์เสมอ
+  const channel = ctx.choose ? normalizeChannel(body.channel) ?? 'store' : ctx.fixed;
+  const result = validateAnswers(ctx.questionsOf(channel), body.answers);
   if (!result.ok) return res.status(422).json({ error: 'invalid_answers', fields: result.errors });
   if (result.rows.length === 0) return res.status(422).json({ error: 'empty_submission' });
 
@@ -67,7 +78,7 @@ publicRouter.post('/r/:token/submit', badTokenLimiter, submitLimiter, async (req
       version_id: ctx.version.id,
       branch_id: ctx.branch?.id ?? null,
       link_id: ctx.link.id,
-      channel: ctx.channel,
+      channel,
       meta: JSON.stringify(meta),
     });
     await trx('answers').insert(result.rows.map((row) => ({ response_id: responseId, ...row })));

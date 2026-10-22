@@ -29,6 +29,8 @@
 .link-card h3 { margin: 0 0 4px; }
 .link-card .qr { width: 168px; max-width: 100%; aspect-ratio: 1; background: #fff; border-radius: var(--radius-sm); padding: 6px; border: 1px solid var(--border); }
 .url-row { display: flex; gap: 8px; }
+.channel-pick { margin-top: 10px; }
+.channel-pick select { width: auto; min-height: 40px; padding: 6px 12px; }
 .url-row input { font-family: var(--font-mono); font-size: .8125rem; }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 

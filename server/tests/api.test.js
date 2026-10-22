@@ -82,8 +82,12 @@ test('สร้างสาขา + ลิงก์ลูกค้า + ลิ�
   assert.equal(s.status, 201);
   state.storeToken = tokenOf(s.body.url);
 
-  const noChannel = await admin.post('/api/admin/links').send({ kind: 'customer', branchId: state.branchId, label: 'x' });
-  assert.equal(noChannel.status, 422);
+  // ไม่ระบุช่องทาง = QR เดียว ให้ลูกค้าเลือกเอง (ค่าเริ่มต้น)
+  const choose = await admin.post('/api/admin/links').send({ kind: 'customer', branchId: state.branchId, label: `choose ${suffix}` });
+  assert.equal(choose.status, 201);
+  assert.equal(choose.body.channel, 'choose');
+  state.choose = choose.body;
+  state.chooseToken = tokenOf(choose.body.url);
 
   const d = await admin.post('/api/admin/links').send({ kind: 'dashboard', label: `dash ${suffix}` });
   assert.equal(d.status, 201);
@@ -346,6 +350,45 @@ test('ลบคำตอบ: ทีละรายการ / ตามตัว
   assert.equal(all.body.deleted, 1);
   assert.equal((await admin.get(`/api/admin/stats?range=all&branch_id=${state.branchId}`)).body.totals.responses, 0);
   await db('sheet_deletions').whereIn('response_id', ids).del();
+});
+
+test('QR แบบลูกค้าเลือกเอง: หน้าเลือก, ส่งได้ทั้ง 2 ช่องทาง, เปลี่ยนช่องทาง QR เดิมโดย URL ไม่เปลี่ยน', async () => {
+  const path = `/api/r/${state.chooseToken}`;
+  const form = await request(app).get(path);
+  assert.equal(form.status, 200);
+  assert.equal(form.body.channelChoice, true);
+  assert.deepEqual(Object.keys(form.body.questionsByChannel), ['store', 'online']);
+  const keys = (ch) => form.body.questionsByChannel[ch].map((q) => q.key);
+  assert.ok(keys('store').includes('staff_service') && !keys('store').includes('delivery_on_time'));
+  assert.ok(keys('online').includes('delivery_on_time') && !keys('online').includes('staff_service'));
+  assert.deepEqual(form.body.questions.map((q) => q.key), keys('store')); // หน้าเว็บเก่าที่ค้างแคชยังได้ชุดหน้าร้าน
+
+  const online = { taste: 5, food_quality: 5, delivery_on_time: 3, packaging: 4, overall_satisfaction: 4 };
+  const store = { taste: 4, food_quality: 4, staff_service: 5, cleanliness: 5, overall_satisfaction: 5 };
+  // เลือกออนไลน์ → ต้องตอบคำถามชุดออนไลน์ (ส่งชุดหน้าร้านมาจะไม่ครบ)
+  assert.equal((await request(app).post(`${path}/submit`).send({ channel: 'online', answers: store })).status, 422);
+  assert.equal((await request(app).post(`${path}/submit`).send({ channel: 'online', answers: online })).status, 201);
+  // ไม่ส่งช่องทาง (หน้าเว็บเก่า) = หน้าร้าน
+  assert.equal((await request(app).post(`${path}/submit`).send({ answers: store })).status, 201);
+  const rows = await db('responses').where({ link_id: state.choose.id }).orderBy('id').pluck('channel');
+  assert.deepEqual(rows, ['online', 'store']);
+
+  // ลิงก์ที่ผูกช่องทาง: ไม่สนช่องทางที่ส่งมา
+  assert.equal((await request(app).post(`/api/r/${state.storeToken}/submit`).send({ channel: 'online', answers: store })).status, 201);
+  const storeRow = await db('responses').where({ branch_id: state.branchId }).orderBy('id', 'desc').first();
+  assert.equal(storeRow.channel, 'store');
+
+  // เปลี่ยนช่องทางของ QR เดิม: URL/รหัสใน QR เดิมทุกตัวอักษร
+  const storeLink = (await admin.get(`/api/admin/links?branch_id=${state.branchId}`)).body.find((l) => tokenOf(l.url) === state.storeToken);
+  assert.equal((await admin.patch(`/api/admin/links/${storeLink.id}`).send({ channel: 'choose' })).status, 200);
+  const after = (await admin.get(`/api/admin/links?branch_id=${state.branchId}`)).body.find((l) => l.id === storeLink.id);
+  assert.equal(after.url, storeLink.url);
+  assert.equal(after.channel, 'choose');
+  assert.equal((await request(app).get(`/api/r/${state.storeToken}`)).body.channelChoice, true);
+  assert.equal((await admin.patch(`/api/admin/links/${storeLink.id}`).send({ channel: 'phone' })).status, 422);
+  assert.equal((await admin.patch(`/api/admin/links/${state.dashboard.id}`).send({ channel: 'choose' })).status, 422); // ลิงก์ผู้บริหารไม่มีช่องทาง
+  await admin.patch(`/api/admin/links/${storeLink.id}`).send({ channel: 'store' });
+  assert.equal((await request(app).get(`/api/r/${state.storeToken}`)).body.channel, 'store');
 });
 
 test('ออกจากระบบแล้วเข้า admin ไม่ได้', async () => {

@@ -15,12 +15,34 @@ async function copy(text) {
   }
 }
 
-const CHANNEL_LABELS = { store: 'หน้าร้าน', online: 'ออนไลน์' };
+const CHANNEL_LABELS = { choose: 'เลือกเอง', store: 'หน้าร้าน', online: 'ออนไลน์' };
+// ตัวเลือกช่องทางของลิงก์ลูกค้า ("เลือกเอง" = QR เดียว ลูกค้าเลือกหน้าร้าน/ออนไลน์ตอนสแกน)
+const CHANNEL_OPTIONS = [
+  ['choose', 'ให้ลูกค้าเลือกเอง (QR เดียว)'],
+  ['store', 'หน้าร้านเท่านั้น'],
+  ['online', 'ออนไลน์เท่านั้น'],
+];
 
 function statusBadge(l) {
   if (!l.isActive) return h('span', { class: 'badge off' }, 'ปิดใช้งาน');
   if (l.expiresAt && new Date(l.expiresAt) <= new Date()) return h('span', { class: 'badge off' }, 'หมดอายุ');
   return h('span', { class: 'badge good' }, 'ใช้งานอยู่');
+}
+
+/** เปลี่ยนช่องทางของ QR เดิม (รหัสใน QR ไม่เปลี่ยน ไม่ต้องพิมพ์ใหม่) */
+function channelPicker(l, act) {
+  const current = l.channel ?? 'store';
+  const select = h('select', { 'aria-label': `ช่องทางของ ${l.label}` }, CHANNEL_OPTIONS.map(([value, text]) => h('option', { value, selected: value === current }, text)));
+  select.addEventListener('change', () => {
+    const next = select.value;
+    const what = next === 'choose' ? 'ลูกค้าจะเห็นหน้า "ครั้งนี้สั่งแบบไหน?" ก่อนตอบ' : `ลูกค้าจะเข้าคำถามชุด${CHANNEL_LABELS[next]}ทันที`;
+    if (!confirm(`เปลี่ยนช่องทางของ "${l.label}"?\n${what}\nQR เดิมใช้ได้เหมือนเดิม ไม่ต้องพิมพ์ใหม่`)) {
+      select.value = current;
+      return;
+    }
+    act(() => api(`/admin/links/${l.id}`, { method: 'PATCH', body: { channel: next } }))();
+  });
+  return h('label', { class: 'field inline channel-pick' }, h('span', {}, 'ช่องทาง'), select);
 }
 
 function linkCard(l, reload) {
@@ -42,7 +64,8 @@ function linkCard(l, reload) {
     h('div', { class: 'row' }, h('h3', {}, l.label), h('span', { class: 'badge' }, isCustomer ? `ลูกค้า · ${CHANNEL_LABELS[l.channel] ?? 'หน้าร้าน'}` : 'ผู้บริหาร'), statusBadge(l)),
     h('p', { class: 'muted small' }, isCustomer ? `สาขา: ${l.branchName ?? '–'}` : `ขอบเขต: ${l.branchName ?? 'ทุกสาขา'}`, ` · สร้างเมื่อ ${formatDateTime(l.createdAt)}`, l.expiresAt ? ` · หมดอายุ ${formatDateTime(l.expiresAt)}` : '', !isCustomer ? ` · เปิดดู ${l.hitCount} ครั้ง${l.lastUsedAt ? ` (ล่าสุด ${formatDateTime(l.lastUsedAt)})` : ''}` : ''),
     h('div', { class: 'url-row' }, urlInput, h('button', { class: 'btn', type: 'button', onclick: () => copy(l.url) }, 'คัดลอก')),
-    isCustomer ? h('p', { class: 'muted small' }, '🔒 QR นี้คงที่ — แก้คำถาม สาขา หรืออัปเดตระบบแล้วยังใช้ได้เหมือนเดิม จนกว่าจะกด "ลบลิงก์"') : null,
+    isCustomer ? h('p', { class: 'muted small' }, '🔒 QR นี้คงที่ — แก้คำถาม สาขา ช่องทาง หรืออัปเดตระบบแล้วยังใช้ได้เหมือนเดิม จนกว่าจะกด "ลบลิงก์"') : null,
+    isCustomer ? channelPicker(l, act) : null,
     h(
       'div',
       { class: 'actions' },
@@ -105,8 +128,9 @@ export async function linksPanel({ branchId = null, branches }) {
     ];
     clear(holder).append(
       createForm(),
-      ...section('store', 'ลิงก์/QR หน้าร้าน', 'ติดที่โต๊ะ เคาน์เตอร์ หรือหน้าร้าน — ลูกค้าตอบคำถามชุดหน้าร้าน'),
-      ...section('online', 'ลิงก์/QR ออนไลน์', 'แนบในแชต แอปเดลิเวอรี่ หรือสติกเกอร์บนกล่อง — ลูกค้าตอบคำถามชุดออนไลน์'),
+      ...section('choose', 'QR ลูกค้าเลือกเอง (แนะนำ)', 'QR เดียวใช้ได้ทุกที่ — สแกนแล้วลูกค้าเลือก "หน้าร้าน" หรือ "ออนไลน์" ก่อนตอบ'),
+      ...(customer('store').length ? section('store', 'QR หน้าร้านเท่านั้น', 'ลูกค้าเข้าคำถามชุดหน้าร้านทันที') : []),
+      ...(customer('online').length ? section('online', 'QR ออนไลน์เท่านั้น', 'ลูกค้าเข้าคำถามชุดออนไลน์ทันที (เช่น สาขาที่มีแต่สั่งออนไลน์)') : []),
       branchId ? null : h('h2', { style: undefined }, 'ลิงก์สำหรับผู้บริหาร (Dashboard รวม)'),
       branchId ? null : dash.length ? h('div', { class: 'list' }, dash.map((l) => linkCard(l, reload))) : h('p', { class: 'muted' }, 'ยังไม่มีลิงก์ผู้บริหาร'),
     );
@@ -115,7 +139,7 @@ export async function linksPanel({ branchId = null, branches }) {
   function createForm() {
     const kind = h('select', { name: 'kind', 'aria-label': 'ชนิดลิงก์' }, h('option', { value: 'customer' }, 'ลิงก์ลูกค้า (QR)'), branchId ? null : h('option', { value: 'dashboard' }, 'ลิงก์ผู้บริหาร (Dashboard)'));
     const branchSel = h('select', { name: 'branch', 'aria-label': 'สาขา' }, branchId ? null : h('option', { value: '' }, 'ทุกสาขา (เฉพาะลิงก์ผู้บริหาร)'), branches.filter((b) => b.isActive && (!branchId || b.id === branchId)).map((b) => h('option', { value: b.id, selected: b.id === branchId }, b.name)));
-    const channel = h('select', { name: 'channel', 'aria-label': 'ช่องทาง' }, h('option', { value: 'store' }, 'หน้าร้าน'), h('option', { value: 'online' }, 'ออนไลน์ (เดลิเวอรี่/แชต)'));
+    const channel = h('select', { name: 'channel', 'aria-label': 'ช่องทาง' }, CHANNEL_OPTIONS.map(([value, text]) => h('option', { value }, text)));
     const channelField = h('label', { class: 'field' }, h('span', {}, 'ช่องทาง'), channel);
     const label = h('input', { type: 'text', name: 'label', maxlength: 200, placeholder: 'ชื่อลิงก์ เช่น “QR หน้าร้าน” / “ผู้บริหาร ไตรมาส 4”', 'aria-label': 'ชื่อลิงก์', required: true });
     const expires = h('input', { type: 'datetime-local', name: 'expires', 'aria-label': 'วันหมดอายุ (ไม่บังคับ)' });

@@ -6,7 +6,7 @@ import { db } from '../db/knex.js';
 import { loginLimiter } from '../middleware/rateLimit.js';
 import { requireAdmin } from '../middleware/auth.js';
 import { newPublicId, newStaticSig, linkUrl } from '../services/tokens.js';
-import { parseQuestionDefinitions, CHANNELS, normalizeChannel } from '../services/questions.js';
+import { parseQuestionDefinitions, LINK_CHANNELS, normalizeChannel } from '../services/questions.js';
 import { getLatestVersion, parseJson } from '../services/links.js';
 import { getStats, clearStatsCache } from '../services/aggregate.js';
 
@@ -271,7 +271,7 @@ adminRouter.post('/links', async (req, res) => {
   const parsed = z
     .object({
       kind: z.enum(['customer', 'dashboard']),
-      channel: z.enum(CHANNELS).nullable().optional(),
+      channel: z.enum(LINK_CHANNELS).nullable().optional(),
       branchId: z.number().int().positive().nullable().optional(),
       label: z.string().trim().min(1).max(200),
       expiresAt: z.string().datetime().nullable().optional(),
@@ -280,11 +280,10 @@ adminRouter.post('/links', async (req, res) => {
   if (!parsed.success) return validationError(res, parsed.error);
   const { kind, label } = parsed.data;
   const branchId = parsed.data.branchId ?? null;
-  // ลิงก์ลูกค้าต้องเลือกช่องทาง (หน้าร้าน/ออนไลน์) — ลิงก์ผู้บริหารไม่ผูกช่องทาง (กรองใน Dashboard ได้)
-  const channel = kind === 'customer' ? parsed.data.channel ?? null : null;
+  // ลิงก์ลูกค้า: ค่าเริ่มต้น 'choose' (QR เดียว ลูกค้าเลือกหน้าร้าน/ออนไลน์เอง) หรือผูกช่องทาง — ลิงก์ผู้บริหารไม่ผูกช่องทาง (กรองใน Dashboard)
+  const channel = kind === 'customer' ? parsed.data.channel ?? 'choose' : null;
 
   if (kind === 'customer' && !branchId) return res.status(422).json({ error: 'validation', issues: [{ path: 'branchId', message: 'ลิงก์ลูกค้าต้องระบุสาขา' }] });
-  if (kind === 'customer' && !channel) return res.status(422).json({ error: 'validation', issues: [{ path: 'channel', message: 'ลิงก์ลูกค้าต้องเลือกช่องทาง (หน้าร้าน/ออนไลน์)' }] });
   if (branchId && !(await db('branches').where({ id: branchId }).first())) return res.status(404).json({ error: 'branch_not_found' });
 
   const survey = await activeSurvey();
@@ -306,10 +305,21 @@ adminRouter.post('/links', async (req, res) => {
 
 adminRouter.patch('/links/:id', async (req, res) => {
   const parsed = z
-    .object({ label: z.string().trim().min(1).max(200).optional(), isActive: z.boolean().optional(), expiresAt: z.string().datetime().nullable().optional() })
+    .object({
+      label: z.string().trim().min(1).max(200).optional(),
+      isActive: z.boolean().optional(),
+      expiresAt: z.string().datetime().nullable().optional(),
+      channel: z.enum(LINK_CHANNELS).optional(), // เปลี่ยนช่องทางของ QR เดิมได้ — รหัสใน QR ไม่เปลี่ยน
+    })
     .safeParse(req.body);
   if (!parsed.success) return validationError(res, parsed.error);
   const patch = {};
+  if (parsed.data.channel !== undefined) {
+    const link = await db('share_links').where({ id: req.params.id }).first('kind');
+    if (!link) return res.status(404).json({ error: 'not_found' });
+    if (link.kind !== 'customer') return res.status(422).json({ error: 'validation', issues: [{ path: 'channel', message: 'ลิงก์ผู้บริหารไม่ผูกช่องทาง' }] });
+    patch.channel = parsed.data.channel;
+  }
   if (parsed.data.label !== undefined) patch.label = parsed.data.label;
   if (parsed.data.isActive !== undefined) patch.is_active = parsed.data.isActive;
   if (parsed.data.expiresAt !== undefined) patch.expires_at = parsed.data.expiresAt ? new Date(parsed.data.expiresAt) : null;
