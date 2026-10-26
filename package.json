@@ -1,0 +1,16 @@
+{
+  "name": "customer-review-vercel",
+  "private": true,
+  "description": "Vercel (Root Directory = โฟลเดอร์นี้): เสิร์ฟ web/ + Functions ฟอร์มลูกค้าใน api/ — dependency ต้องตรงกับ server/package.json",
+  "type": "module",
+  "engines": {
+    "node": "24.x"
+  },
+  "dependencies": {
+    "dotenv": "^18.0.7",
+    "knex": "^3.3.0",
+    "mysql2": "^3.24.5",
+    "nanoid": "^6.0.2",
+    "zod": "^4.6.6"
+  }
+}

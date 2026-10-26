@@ -20,7 +20,7 @@ export function buildKnexConfig(env = config) {
     },
     pool: {
       min: 0,
-      max: 10,
+      max: env.DB_POOL_MAX ?? 10,
       idleTimeoutMillis: 120_000,
       reapIntervalMillis: 30_000,
     },

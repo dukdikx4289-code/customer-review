@@ -16,6 +16,8 @@ const schema = z.object({
   DB_PASSWORD: z.string().min(1),
   DB_NAME: z.string().min(1),
   DB_SSL: bool,
+  // จำนวน connection สูงสุดต่อ instance — Vercel Functions ตั้งให้น้อย (เช่น 3) เพราะเปิดได้หลาย instance พร้อมกัน
+  DB_POOL_MAX: z.coerce.number().int().min(1).max(50).default(10),
 
   SESSION_SECRET: z.string().min(32, 'SESSION_SECRET ต้องยาวอย่างน้อย 32 ตัวอักษร'),
   LINK_SIGNING_SECRET: z.string().min(32, 'LINK_SIGNING_SECRET ต้องยาวอย่างน้อย 32 ตัวอักษร'),

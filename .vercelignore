@@ -1,0 +1,7 @@
+# ไม่ต้องอัปโหลดขึ้น Vercel (เว็บใช้ web/ + api/ + server/src เท่านั้น)
+docs/
+database/
+server/tests/
+server/scripts/
+server/node_modules/
+**/.env

@@ -9,11 +9,13 @@
   - แอดมิน: `js/admin/main.js` เป็น hash router (`#/branches`, `#/branch/<id>`) หน้าละไฟล์ใน `js/admin/`; เพิ่มหน้า = เพิ่มใน `routes` + nav `data-route`; 401 เด้งไป `login.html`
 - `server/` — Node 24 + Express 5 (ESM), mysql2 + Knex, deploy ที่ Render. `src/routes/` (public, dashboard, admin), `src/services/` (tokens, questions, links, aggregate, sheetsSync, sheetsSetup, sessionStore), `src/db/migrations|seeds`, `scripts/`
 - DB: MySQL 8 (Docker) ตอน dev, **TiDB Cloud Starter** ตอน production (ใช้ไวยากรณ์ MySQL มาตรฐานเท่านั้น)
-- `docs/` คู่มือ deploy/แอดมิน/Google Sheets | `render.yaml`, `web/vercel.json`, `.github/workflows/ci.yml` (MySQL 8.4 → migrate → seed → test), `db-backup.yml`
+- `docs/` คู่มือ deploy/แอดมิน/Google Sheets | `render.yaml`, `vercel.json` (+ `web/vercel.json` ของเดิม ลบได้หลังย้าย Root Directory), `.github/workflows/ci.yml` (MySQL 8.4 → migrate → seed → test), `db-backup.yml`
 
 ## สถาปัตยกรรมคำขอ
 
-- Production: เบราว์เซอร์เรียก `/api/*` บนโดเมน Vercel (`web/js/api.js`) → rewrite ไป Render ⇒ same-origin ไม่มี CORS; CSP อยู่ที่ `vercel.json`
+- Production: เบราว์เซอร์เรียก `/api/*` บนโดเมน Vercel (`web/js/api.js`) ⇒ same-origin ไม่มี CORS; config/CSP อยู่ที่ `vercel.json` (root; Vercel Root Directory = root, `outputDirectory: web`)
+  - **ฟอร์มลูกค้า `/api/r/:token` + `/submit` = Vercel Functions** (`api/r/…` → `api/_lib/form.js`) ไม่ต้องรอ Render หลับ/ตื่น; ตรรกะร่วมกับ Express ที่ `services/publicForm.js` (แก้ที่เดียว); rate limit ต่อ instance; retry 1 ครั้งเมื่อ connection หลุด; dependency ของ Functions อยู่ที่ `package.json` (root) ต้องตรงกับ `server/package.json`; env บน Vercel ต้องมีชุด DB + secret เหมือน Render (`DB_POOL_MAX=3`)
+  - `/api` อื่น (แอดมิน, Dashboard) → rewrite ไป Render; worker ชีทอยู่ Render — `.github/workflows/wake-render.yml` ปลุกทุก 30 นาที
 - Dev: `SERVE_WEB` (เปิดเองเมื่อไม่ใช่ production) ให้ Express เสิร์ฟ `web/` ที่ :3000 — ใช้ `localhost` ไม่ใช่ `127.0.0.1` (ไม่งั้นโดน `bad_origin`)
 - `src/app.js`: `/healthz` (ห้ามแตะ DB) → `/api` (no-store) → public/dashboard → `/api/admin` (session + `requireSameOrigin`); log ซ่อน token ด้วย `redact()`
 - แอดมิน: session เก็บใน DB (`sessionStore.js`), กัน CSRF ด้วย SameSite + `Origin` ต้องตรง `PUBLIC_BASE_URL`; route ที่ต้องล็อกอินใช้ `requireAdmin`
@@ -57,7 +59,7 @@ npm run sheets:backfill -- --yes           # ส่งคำตอบทั้�
 - **ข้อความหลังส่ง** อยู่ใน `survey_versions.settings` ต่อฟอร์ม: `sentTitle` (หน้าส่งสำเร็จ ~1.8 วิ) → `thanksTitle` + `thankYou` (หน้าขอบคุณ); แก้ได้ที่หน้าแก้ไขคำถาม; ค่าเริ่มต้นซ้ำกันใน `js/form.js` (`DONE_DEFAULTS`) และ `js/admin/survey.js` (`DONE_FIELDS`) ต้องแก้คู่กัน
 - **ฟอร์มแยกสาขา (แก้แยกกันทุกสาขา)**: ทุกสาขามีฟอร์มของตัวเอง (`branches.custom_form = true`, `survey_versions.branch_id`); ฟอร์มที่ `branch_id IS NULL` = **แม่แบบสำหรับสาขาใหม่** + fallback เท่านั้น — สร้างสาขาใหม่ต้องคัดลอกแม่แบบให้ (`POST /branches`, seed ทำให้แล้ว); ดึงฟอร์มด้วย `getLatestVersion(surveyId, { branchId })` เสมอ (ห้าม query เวอร์ชันล่าสุดโดยไม่กรอง `branch_id`); เผยแพร่ผ่าน `publishVersion()` ใน `routes/admin.js` (`version_no` นับรวมทั้งแบบสอบถาม); คัดลอกฟอร์มข้ามสาขา `POST /survey/copy`; Dashboard รายสาขาใช้ฟอร์มสาขา, Dashboard รวมเทียบสาขาด้วย `branchStars` (เฉลี่ยทุกคะแนนดาว)
 - **คำถาม = JSON + versioning**: เผยแพร่ = เพิ่มแถว `survey_versions` ห้ามแก้ของเก่า; `question_key` คงที่ข้ามเวอร์ชัน. เพิ่มชนิดคำถามแก้ 3 ที่: `services/questions.js` (QUESTION_TYPES + validateAnswers), `web/js/form.js`, และ `services/aggregate.js` ถ้าต้องการสถิติ
-- **บันทึกคำตอบ**: `responses` + `answers` + `sheet_outbox` ใน transaction เดียว (`routes/public.js`); honeypot `website` ตอบสำเร็จหลอกโดยไม่บันทึก
+- **บันทึกคำตอบ**: `responses` + `answers` + `sheet_outbox` ใน transaction เดียว (`services/publicForm.js`); honeypot `website` ตอบสำเร็จหลอกโดยไม่บันทึก
 - **ข้อความผู้ใช้**: ใช้ `textContent` (`h()` ใน `web/js/util.js`) ห้าม `innerHTML`; CSP ห้าม inline script/style (ห้าม `style="..."` ใน HTML — ใช้ `el.style.x` หรือ class)
 - **Google Sheets** (`docs/google-sheets.md`): key Service Account ห้ามอยู่ในโปรเจกต์ (repo public; `sheets:setup` ปฏิเสธ); worker ห้ามทำ API ล่มเมื่อ key เสีย; `valueInputOption=RAW` เสมอ (กัน formula injection); คอลัมน์เพิ่มต่อท้ายเท่านั้น ห้ามลบ/สลับ (`mergeHeader`); ส่งผ่าน `sheet_outbox` + worker ตัวเดียว (Render `numInstances: 1`); แอดมินลบคำตอบ (`POST /api/admin/responses/delete`) → เข้าคิว `sheet_deletions` แล้ว worker ลบแถวในชีทตาม response_id (คอลัมน์ A); **เครื่อง dev ต้องไม่ซิงก์เข้าชีท production** (`SHEETS_SYNC_ENABLED=false` หรือใช้ชีทแยก) เพราะ response_id ของ dev ชนกับของจริงได้
 - **TiDB**: เก็บเวลา UTC, Dashboard แปลงเป็น UTC+7 ด้วย `CONVERT_TZ(..., '+00:00', '+07:00')`; เรียงด้วย `submitted_at` ไม่ใช่ id; pool ปิด connection ว่างก่อน 340 วินาที (`db/knex.js`); TLS (`DB_SSL=true`)

@@ -50,12 +50,20 @@ npm run sheets:check -- --init                                                  
    `ADMIN_BOOTSTRAP_USER=<ชื่อ> ADMIN_BOOTSTRAP_PASSWORD=<รหัสผ่านยาว ≥10> npm run db:seed` แล้ว **ลบตัวแปรนี้ทิ้ง** และเปลี่ยนรหัสผ่านที่หน้า "บัญชี"
    *(seed ใส่สาขาและแบบสอบถามตัวอย่างด้วย — ลบ/แก้ที่หน้าแอดมินได้)*
 
-## 4. Vercel (หน้าบ้าน)
+## 4. Vercel (หน้าบ้าน + ฟอร์มลูกค้า)
 
-1. [vercel.com](https://vercel.com) → Add New → Project → เลือก repo → **Root Directory = `web`**, Framework = Other (ไม่มี build)
-2. แก้ [web/vercel.json](../web/vercel.json) บรรทัด `/api/:path*` ให้ `destination` ชี้ URL Render จริง (`https://<service>.onrender.com/api/:path*`) แล้ว push
-3. ตั้งโดเมน (ถ้ามี): Project → Settings → Domains
-4. ให้ `PUBLIC_BASE_URL` บน Render **ตรงกับโดเมนนี้เป๊ะ** (ใช้ตรวจ Origin ของแอดมินและสร้างลิงก์) — ถ้าเปลี่ยนโดเมนต้องแก้ค่านี้แล้วลิงก์ที่คัดลอกจากหน้าแอดมินจะเป็นโดเมนใหม่โดยอัตโนมัติ (QR ที่พิมพ์ไปแล้วต้องพิมพ์ใหม่)
+Vercel เสิร์ฟ `web/` และรัน **Vercel Functions ของฟอร์มลูกค้า** (`api/r/…`: เปิดคำถาม + ส่งคำตอบ) เอง ลูกค้าที่สแกน QR จึงไม่ต้องรอ Render ตื่น · `/api` อื่น (แอดมิน, Dashboard) rewrite ไป Render ตาม [vercel.json](../vercel.json)
+
+1. [vercel.com](https://vercel.com) → Add New → Project → เลือก repo → **Root Directory = โฟลเดอร์หลักของ repo (ว่าง / `./`)**, Framework = Other — config อยู่ที่ [vercel.json](../vercel.json) (`outputDirectory: web`, Functions รันที่สิงคโปร์ `sin1` ใกล้ TiDB)
+2. Project → Settings → **Environment Variables** (Production) — คัดลอกค่าเดียวกับ Render:
+   `DB_HOST` `DB_PORT` `DB_USER` `DB_PASSWORD` `DB_NAME` `DB_SSL=true` `SESSION_SECRET` `LINK_SIGNING_SECRET` `PUBLIC_BASE_URL` และตั้ง `NODE_ENV=production` `DB_POOL_MAX=3`
+3. แก้ `destination` ของ `/api/:path*` ใน [vercel.json](../vercel.json) ให้ชี้ URL Render จริง แล้ว push
+4. ตั้งโดเมน (ถ้ามี): Project → Settings → Domains
+5. ให้ `PUBLIC_BASE_URL` (ทั้ง Render และ Vercel) **ตรงกับโดเมนนี้เป๊ะ** (ใช้ตรวจ Origin ของแอดมินและสร้างลิงก์) — ถ้าเปลี่ยนโดเมนต้องแก้ค่านี้แล้วลิงก์ที่คัดลอกจากหน้าแอดมินจะเป็นโดเมนใหม่โดยอัตโนมัติ (QR ที่พิมพ์ไปแล้วต้องพิมพ์ใหม่)
+6. ตรวจว่าฟอร์มวิ่งที่ Vercel: `curl -sI https://<โดเมน>/api/r/x` ต้องได้ `404` และ**ไม่มี** header `rndr-id` (มี = ยังวิ่งไป Render)
+
+> `web/vercel.json` = config เดิมตอน Root Directory = `web` (ไม่มีฟอร์มบน Vercel) — ลบได้เมื่อย้าย Root Directory แล้ว
+> Google Sheets: คำตอบเข้าคิว `sheet_outbox` แล้ว worker บน Render ส่งขึ้นชีท — Render ฟรีหลับได้ จึงมี workflow `wake-render` ปลุกทุก 30 นาที (แถวในชีทช้าได้ถึง ~30 นาที; ใช้ Render Starter แล้วลบ workflow นี้ได้)
 
 ## 5. GitHub Actions (สำรองข้อมูล)
 
@@ -77,6 +85,7 @@ Repo → Settings → Secrets → ตั้ง `DB_HOST` `DB_PORT` `DB_USER` `DB
 |---|---|
 | แอดมินล็อกอินแล้วโดนเด้งออก / 403 `bad_origin` | `PUBLIC_BASE_URL` ไม่ตรงกับโดเมนที่เปิดอยู่ |
 | ทุก API ตอบ 502/504 | Vercel rewrite ชี้ URL Render ผิด หรือ Render service ยังไม่ขึ้น |
+| ลูกค้าเปิดฟอร์มได้ 500 `internal_error` | Vercel → Logs: ส่วนใหญ่ลืมตั้ง Environment Variables บน Vercel (ข้อ 4.2) หรือ TiDB ปฏิเสธ connection |
 | ล็อกอินไม่ติด (cookie ไม่เก็บ) | ต้องเข้าผ่าน HTTPS และผ่าน Vercel (ไม่ใช่ `onrender.com` ตรงๆ) |
 | ส่งฟอร์มไม่ได้ทั้งที่ลิงก์ถูก | โควตา TiDB ฟรีหมด (ดู Usage) หรือ DB ล่ม — ดู Render Logs |
 | ชีทไม่อัปเดต | ดู Logs หา `Sheets sync`; ตรวจว่าแชร์ชีทให้ service account แล้ว; แถวค้างอยู่ในตาราง `sheet_outbox` (retry อัตโนมัติ) |
