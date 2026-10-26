@@ -52,7 +52,7 @@ npm run sheets:check -- --init                                                  
 
 ## 4. Vercel (หน้าบ้าน + ฟอร์มลูกค้า)
 
-Vercel เสิร์ฟ `web/` และรัน **Vercel Functions ของฟอร์มลูกค้า** (`api/r/…`: เปิดคำถาม + ส่งคำตอบ) เอง ลูกค้าที่สแกน QR จึงไม่ต้องรอ Render ตื่น · `/api` อื่น (แอดมิน, Dashboard) rewrite ไป Render ตาม [vercel.json](../vercel.json)
+Vercel เสิร์ฟ `web/` และรัน **Vercel Functions ของฟอร์มลูกค้า** (`api/form-load.js` / `api/form-submit.js`: เปิดคำถาม + ส่งคำตอบ — rewrite จาก `/api/r/…` ใน vercel.json) เอง ลูกค้าที่สแกน QR จึงไม่ต้องรอ Render ตื่น · `/api` อื่น (แอดมิน, Dashboard) rewrite ไป Render ตาม [vercel.json](../vercel.json)
 
 1. [vercel.com](https://vercel.com) → Add New → Project → เลือก repo → **Root Directory = โฟลเดอร์หลักของ repo (ว่าง / `./`)**, Framework = Other — config อยู่ที่ [vercel.json](../vercel.json) (`outputDirectory: web`, Functions รันที่สิงคโปร์ `sin1` ใกล้ TiDB)
 2. Project → Settings → **Environment Variables** (Production) — คัดลอกค่าเดียวกับ Render:

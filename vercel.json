@@ -13,6 +13,14 @@
   "trailingSlash": false,
   "rewrites": [
     {
+      "source": "/api/r/:token/submit",
+      "destination": "/api/form-submit?token=:token"
+    },
+    {
+      "source": "/api/r/:token",
+      "destination": "/api/form-load?token=:token"
+    },
+    {
       "source": "/api/:path*",
       "destination": "https://customer-review-9s49.onrender.com/api/:path*"
     },

@@ -14,7 +14,7 @@
 ## สถาปัตยกรรมคำขอ
 
 - Production: เบราว์เซอร์เรียก `/api/*` บนโดเมน Vercel (`web/js/api.js`) ⇒ same-origin ไม่มี CORS; config/CSP อยู่ที่ `vercel.json` (root; Vercel Root Directory = root, `outputDirectory: web`)
-  - **ฟอร์มลูกค้า `/api/r/:token` + `/submit` = Vercel Functions** (`api/r/…` → `api/_lib/form.js`) ไม่ต้องรอ Render หลับ/ตื่น; ตรรกะร่วมกับ Express ที่ `services/publicForm.js` (แก้ที่เดียว); rate limit ต่อ instance; retry 1 ครั้งเมื่อ connection หลุด; dependency ของ Functions อยู่ที่ `package.json` (root) ต้องตรงกับ `server/package.json`; env บน Vercel ต้องมีชุด DB + secret เหมือน Render (`DB_POOL_MAX=3`)
+  - **ฟอร์มลูกค้า `/api/r/:token` + `/submit` = Vercel Functions** (rewrite ใน `vercel.json` → `api/form-load.js` / `api/form-submit.js` → `api/_lib/form.js`; rewrite นี้ต้องอยู่ก่อน `/api/:path*`) ไม่ต้องรอ Render หลับ/ตื่น; ตรรกะร่วมกับ Express ที่ `services/publicForm.js` (แก้ที่เดียว); rate limit ต่อ instance; retry 1 ครั้งเมื่อ connection หลุด; dependency ของ Functions อยู่ที่ `package.json` (root) ต้องตรงกับ `server/package.json`; env บน Vercel ต้องมีชุด DB + secret เหมือน Render (`DB_POOL_MAX=3`)
   - `/api` อื่น (แอดมิน, Dashboard) → rewrite ไป Render; worker ชีทอยู่ Render — `.github/workflows/wake-render.yml` ปลุกทุก 30 นาที
 - Dev: `SERVE_WEB` (เปิดเองเมื่อไม่ใช่ production) ให้ Express เสิร์ฟ `web/` ที่ `PORT` (เครื่องนี้ :5000) — ใช้ `localhost` ไม่ใช่ `127.0.0.1` (ไม่งั้นโดน `bad_origin`)
 - `src/app.js`: `/healthz` (ห้ามแตะ DB) → `/api` (no-store) → public/dashboard → `/api/admin` (session + `requireSameOrigin`); log ซ่อน token ด้วย `redact()`

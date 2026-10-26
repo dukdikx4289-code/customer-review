@@ -1,4 +1,5 @@
 // Vercel Functions ของฟอร์มลูกค้า: GET /api/r/:token และ POST /api/r/:token/submit
+// (vercel.json rewrite ไป api/form-load.js / api/form-submit.js พร้อม ?token= — ต้องอยู่ก่อน rewrite /api/:path* ที่ไป Render)
 // ทำให้ลูกค้าที่สแกน QR ไม่ต้องรอ Render (แพ็กเกจฟรีหลับเมื่อว่าง 15 นาที) — /api อื่นยัง rewrite ไป Render (vercel.json)
 // ตรรกะเดียวกับ Render ทุกอย่าง (server/src/services/publicForm.js) · ไฟล์ใน api/_lib ไม่ถูกสร้างเป็น function
 import { loadForm, submitForm } from '../../server/src/services/publicForm.js';

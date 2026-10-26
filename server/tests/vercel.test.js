@@ -8,8 +8,8 @@ await import('./helpers/localOnly.js');
 const { db } = await import('../src/db/knex.js');
 const { newPublicId, newStaticSig } = await import('../src/services/tokens.js');
 const { formHandler, _resetLimits } = await import('../../api/_lib/form.js');
-const { default: loadFn } = await import('../../api/r/[token].js');
-const { default: submitFn } = await import('../../api/r/[token]/submit.js');
+const { default: loadFn } = await import('../../api/form-load.js');
+const { default: submitFn } = await import('../../api/form-submit.js');
 
 const suffix = Date.now().toString(36);
 const state = {};
