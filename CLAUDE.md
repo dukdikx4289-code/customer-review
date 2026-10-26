@@ -16,7 +16,7 @@
 - Production: เบราว์เซอร์เรียก `/api/*` บนโดเมน Vercel (`web/js/api.js`) ⇒ same-origin ไม่มี CORS; config/CSP อยู่ที่ `vercel.json` (root; Vercel Root Directory = root, `outputDirectory: web`)
   - **ฟอร์มลูกค้า `/api/r/:token` + `/submit` = Vercel Functions** (`api/r/…` → `api/_lib/form.js`) ไม่ต้องรอ Render หลับ/ตื่น; ตรรกะร่วมกับ Express ที่ `services/publicForm.js` (แก้ที่เดียว); rate limit ต่อ instance; retry 1 ครั้งเมื่อ connection หลุด; dependency ของ Functions อยู่ที่ `package.json` (root) ต้องตรงกับ `server/package.json`; env บน Vercel ต้องมีชุด DB + secret เหมือน Render (`DB_POOL_MAX=3`)
   - `/api` อื่น (แอดมิน, Dashboard) → rewrite ไป Render; worker ชีทอยู่ Render — `.github/workflows/wake-render.yml` ปลุกทุก 30 นาที
-- Dev: `SERVE_WEB` (เปิดเองเมื่อไม่ใช่ production) ให้ Express เสิร์ฟ `web/` ที่ :3000 — ใช้ `localhost` ไม่ใช่ `127.0.0.1` (ไม่งั้นโดน `bad_origin`)
+- Dev: `SERVE_WEB` (เปิดเองเมื่อไม่ใช่ production) ให้ Express เสิร์ฟ `web/` ที่ `PORT` (เครื่องนี้ :5000) — ใช้ `localhost` ไม่ใช่ `127.0.0.1` (ไม่งั้นโดน `bad_origin`)
 - `src/app.js`: `/healthz` (ห้ามแตะ DB) → `/api` (no-store) → public/dashboard → `/api/admin` (session + `requireSameOrigin`); log ซ่อน token ด้วย `redact()`
 - แอดมิน: session เก็บใน DB (`sessionStore.js`), กัน CSRF ด้วย SameSite + `Origin` ต้องตรง `PUBLIC_BASE_URL`; route ที่ต้องล็อกอินใช้ `requireAdmin`
 - `src/index.js` เริ่ม HTTP + Sheets worker และปิดทั้งคู่เมื่อ SIGTERM
@@ -27,11 +27,12 @@
 docker compose up -d                       # (ที่ root) MySQL ในเครื่อง
 npm run db:migrate && npm run db:seed      # seed สร้างแอดมินแรกจาก ADMIN_BOOTSTRAP_USER/PASSWORD
 npm run db:rollback
-PORT=3000 npm run dev                      # shell เครื่องนี้มี PORT=5000 (dotenv ไม่ทับ env เดิม)
+npm run dev                                # :5000 บนเครื่องนี้ (shell มี PORT=5000 + .env PUBLIC_BASE_URL=http://localhost:5000; พอร์ต 3000 เป็นของโปรเจกต์ neawmoo-web)
 npm test                                   # ต้องมี MySQL; รันทีละไฟล์; ปฏิเสธ DB ที่ไม่ใช่ localhost
 node --test tests/unit.test.js             # ไฟล์เดียว (+ --test-name-pattern="...")
 npm run demo:data                          # ข้อมูลตัวอย่าง (-- --clear เพื่อลบ)
 npm run secrets                            # สร้าง SESSION_SECRET / LINK_SIGNING_SECRET
+npm run admin:reset [-- <username>]        # ลืมรหัสแอดมิน (DB ในเครื่องเท่านั้น, พิมพ์รหัสใหม่แบบซ่อน)
 npm run sheets:setup -- --key <key.json> --sheet <URL>
 npm run sheets:check [-- --init]           # --init = สร้างแท็บ/หัวตาราง
 npm run sheets:backfill -- --yes           # ส่งคำตอบทั้งหมดใหม่ (ชีทว่างเท่านั้น ไม่งั้นแถวซ้ำ)
