@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { loadForm, submitForm } from '../services/publicForm.js';
+import { flushEmails } from '../services/notify.js';
 import { badTokenLimiter, submitLimiter } from '../middleware/rateLimit.js';
 
 // ฟอร์มลูกค้าบน Render — production ส่วนนี้วิ่งที่ Vercel Functions (api/r/…) เป็นหลัก ตรรกะอยู่ที่ services/publicForm.js
@@ -13,4 +14,10 @@ publicRouter.get('/r/:token', badTokenLimiter, async (req, res) => {
 publicRouter.post('/r/:token/submit', badTokenLimiter, submitLimiter, async (req, res) => {
   const { status, body } = await submitForm(req.params.token, req.body, { userAgent: req.get('user-agent'), language: req.get('accept-language') });
   res.status(status).json(body);
+  if (status === 201) flushEmails().catch((err) => console.error('Email notify:', err?.message ?? err)); // EMAIL_ENABLED=false (Render) = ไม่ทำอะไร
+});
+
+// ล้างคิวอีเมล (ในเครื่อง/สำรอง — production ใช้ api/notify-flush.js บน Vercel) · ไม่ต้องล็อกอิน: ส่งได้เฉพาะที่เข้าคิวไว้แล้ว
+publicRouter.post('/notify-flush', submitLimiter, async (_req, res) => {
+  res.json({ ok: true, ...(await flushEmails()) });
 });

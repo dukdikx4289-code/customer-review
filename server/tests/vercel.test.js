@@ -90,6 +90,7 @@ test('POST: บันทึกคำตอบ + เข้าคิวชีท, 
   assert.equal(row.channel, 'online');
   assert.equal((typeof row.meta === 'string' ? JSON.parse(row.meta) : row.meta).ua, 'vercel-test');
   assert.ok(await db('sheet_outbox').where({ response_id: row.id }).first());
+  assert.ok(await db('email_outbox').where({ response_id: row.id, kind: 'response' }).first()); // เข้าคิวแจ้งเตือนอีเมล
   assert.equal((await db('answers').where({ response_id: row.id })).length, Object.keys(answers).length);
 
   const missing = await call(submitFn, { method: 'POST', token: state.choose, body: { channel: 'online', answers: {} } });

@@ -65,6 +65,16 @@ Vercel เสิร์ฟ `web/` และรัน **Vercel Functions ของ
 > `web/vercel.json` = config เดิมตอน Root Directory = `web` (ไม่มีฟอร์มบน Vercel) — ลบได้เมื่อย้าย Root Directory แล้ว
 > Google Sheets: คำตอบเข้าคิว `sheet_outbox` แล้ว worker บน Render ส่งขึ้นชีท — Render ฟรีหลับได้ จึงมี workflow `wake-render` ปลุกทุก 30 นาที (แถวในชีทช้าได้ถึง ~30 นาที; ใช้ Render Starter แล้วลบ workflow นี้ได้)
 
+## 4.1 แจ้งเตือนอีเมลรีวิวใหม่ (Gmail)
+
+ส่งจาก Vercel เท่านั้น (Render ฟรีบล็อกพอร์ตอีเมล) — คำตอบเข้าคิว `email_outbox` แล้ว Vercel ส่งทันทีหลังตอบลูกค้า (ลองใหม่อัตโนมัติผ่าน `/api/notify-flush` ทุก 30 นาทีจาก workflow `wake-render`)
+
+1. **แนะนำให้สร้าง Gmail ใหม่สำหรับส่งของระบบโดยเฉพาะ** (ไม่ใช้กล่องหลักของร้าน — ถ้ารหัสหลุดจะเสียหายแค่กล่องนี้)
+2. บัญชี Google นั้น → [myaccount.google.com/security](https://myaccount.google.com/security) → เปิด **การยืนยันแบบ 2 ขั้นตอน** → ค้นหา **App passwords** (รหัสผ่านสำหรับแอป) → สร้างชื่อ `review` → ได้รหัส 16 ตัว
+3. Vercel → Settings → Environment Variables (Production, Type **Secret**): `EMAIL_ENABLED=true` `GMAIL_USER=<อีเมลนั้น>` `GMAIL_APP_PASSWORD=<รหัส 16 ตัว ไม่ต้องมีเว้นวรรค>` (ไม่บังคับ: `EMAIL_FROM_NAME`) → Redeploy
+4. หน้าแอดมิน → **แจ้งเตือนอีเมล** → เพิ่มผู้รับ (ทุกสาขา หรือเฉพาะสาขา) → **ส่งอีเมลทดสอบ** (ไม่เห็นให้ดูโฟลเดอร์สแปม)
+5. โควตา Gmail ประมาณ 500 ฉบับ/วัน (นับต่อผู้รับ) ดูยอดได้ในหน้าแจ้งเตือนอีเมล — ถ้าใกล้เต็มสลับเป็น "เฉพาะรีวิวที่ต้องดู"
+
 ## 5. GitHub Actions (สำรองข้อมูล)
 
 Repo → Settings → Secrets → ตั้ง `DB_HOST` `DB_PORT` `DB_USER` `DB_PASSWORD` `DB_NAME` → Actions → db-backup → **Run workflow** 1 ครั้งเพื่อทดสอบ และลอง restore ไฟล์ลง DB ทดสอบก่อนพึ่งพา
@@ -88,5 +98,6 @@ Repo → Settings → Secrets → ตั้ง `DB_HOST` `DB_PORT` `DB_USER` `DB
 | ลูกค้าเปิดฟอร์มได้ 500 `internal_error` | Vercel → Logs: ส่วนใหญ่ลืมตั้ง Environment Variables บน Vercel (ข้อ 4.2) หรือ TiDB ปฏิเสธ connection |
 | ล็อกอินไม่ติด (cookie ไม่เก็บ) | ต้องเข้าผ่าน HTTPS และผ่าน Vercel (ไม่ใช่ `onrender.com` ตรงๆ) |
 | ส่งฟอร์มไม่ได้ทั้งที่ลิงก์ถูก | โควตา TiDB ฟรีหมด (ดู Usage) หรือ DB ล่ม — ดู Render Logs |
+| ไม่ได้รับอีเมลแจ้งเตือน | หน้าแจ้งเตือนอีเมล → กล่องสถานะ: "ยังไม่ได้เปิดการส่งอีเมล" = ตั้ง env บน Vercel ไม่ครบ; error `535` = App Password ผิด/ถูกยกเลิก; ดูโฟลเดอร์สแปม |
 | ชีทไม่อัปเดต | ดู Logs หา `Sheets sync`; ตรวจว่าแชร์ชีทให้ service account แล้ว; แถวค้างอยู่ในตาราง `sheet_outbox` (retry อัตโนมัติ) |
 | `ECONNRESET` ต่อ TiDB | idle ถูกตัด — pool ตั้งปิด connection ว่างก่อนครบ 340 วินาทีแล้ว; ถ้ายังเกิดบ่อยให้ลด `idleTimeoutMillis` ใน `server/src/db/knex.js` |

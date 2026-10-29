@@ -6,6 +6,7 @@ import { linksView } from './links.js';
 import { surveyView } from './survey.js';
 import { responsesView } from './responses.js';
 import { accountView } from './account.js';
+import { notifyView } from './notify.js';
 import { initEffects, reveal } from '../ui/motion.js';
 
 initEffects();
@@ -21,6 +22,7 @@ const routes = {
   links: linksView,
   survey: surveyView,
   responses: responsesView,
+  notify: notifyView,
   account: accountView,
 };
 

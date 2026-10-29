@@ -30,6 +30,12 @@ const schema = z.object({
   GOOGLE_SHEET_ID: z.string().optional().default(''),
   GOOGLE_SERVICE_ACCOUNT_JSON_B64: z.string().optional().default(''),
 
+  // แจ้งเตือนอีเมลรีวิวใหม่ผ่าน Gmail (App Password) — เปิดบน Vercel เท่านั้น (Render ฟรีบล็อกพอร์ตอีเมล) · dev/เทสต์ปิดไว้
+  EMAIL_ENABLED: bool,
+  GMAIL_USER: z.string().optional().default(''),
+  GMAIL_APP_PASSWORD: z.string().optional().default(''),
+  EMAIL_FROM_NAME: z.string().optional().default('รีวิวเหนียวหมูไส้แตก'),
+
   DASHBOARD_CACHE_TTL_SEC: z.coerce.number().int().min(0).default(60),
 
   // เสิร์ฟโฟลเดอร์ web/ จากเซิร์ฟเวอร์นี้เลย (ใช้ตอนพัฒนา) — production หน้าบ้านอยู่ที่ Vercel
@@ -56,6 +62,10 @@ if (env.NODE_ENV === 'production') {
   const weak = [env.SESSION_SECRET, env.LINK_SIGNING_SECRET].some((v) => v.startsWith('change-me'));
   if (weak) {
     console.error('SESSION_SECRET / LINK_SIGNING_SECRET ยังเป็นค่าตัวอย่าง ห้ามใช้ใน production');
+    process.exit(1);
+  }
+  if (env.EMAIL_ENABLED && (!env.GMAIL_USER || !env.GMAIL_APP_PASSWORD)) {
+    console.error('เปิด EMAIL_ENABLED แล้วต้องตั้ง GMAIL_USER และ GMAIL_APP_PASSWORD');
     process.exit(1);
   }
   if (env.SHEETS_SYNC_ENABLED && (!env.GOOGLE_SHEET_ID || !env.GOOGLE_SERVICE_ACCOUNT_JSON_B64)) {

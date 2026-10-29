@@ -10,6 +10,7 @@ import { parseQuestionDefinitions, LINK_CHANNELS, normalizeChannel, shortLabel }
 import { getLatestVersion, parseJson } from '../services/links.js';
 import { getStats, clearStatsCache } from '../services/aggregate.js';
 import { responseDetail } from '../services/responses.js';
+import { NOTIFY_MODES, getNotifySettings, setNotifySettings, notifyStats } from '../services/notify.js';
 
 export const adminRouter = Router();
 
@@ -501,4 +502,62 @@ adminRouter.post('/responses/delete', async (req, res) => {
   });
   clearStatsCache();
   res.json({ ok: true, deleted });
+});
+
+// ---------- แจ้งเตือนอีเมล (ส่งจริงจาก Vercel: api/notify-flush.js — Render เข้าคิวอย่างเดียว) ----------
+const MAX_RECIPIENTS = 50;
+
+async function notifyPayload() {
+  const rows = await db('notify_recipients as n').leftJoin('branches as b', 'b.id', 'n.branch_id').orderBy('n.email').orderBy('n.id').select('n.id', 'n.email', 'n.branch_id', 'b.name as branch');
+  return {
+    recipients: rows.map((r) => ({ id: r.id, email: r.email, branchId: r.branch_id ?? null, branch: r.branch ?? null })),
+    settings: await getNotifySettings(),
+    stats: await notifyStats(),
+  };
+}
+
+adminRouter.get('/notify', async (_req, res) => {
+  res.json(await notifyPayload());
+});
+
+// เพิ่มผู้รับ: branchIds = [] → ทุกสาขา, [id, …] → เฉพาะสาขาเหล่านั้น (1 แถวต่อสาขา) · ซ้ำของเดิม = ข้าม
+adminRouter.post('/notify/recipients', async (req, res) => {
+  const parsed = z
+    .object({ email: z.string().trim().toLowerCase().max(254).email('อีเมลไม่ถูกต้อง'), branchIds: z.array(z.number().int().positive()).max(100).default([]) })
+    .safeParse(req.body);
+  if (!parsed.success) return validationError(res, parsed.error);
+  const { email, branchIds } = parsed.data;
+
+  const branches = branchIds.length ? await db('branches').whereIn('id', branchIds).pluck('id') : [];
+  if (branches.length !== new Set(branchIds).size) return res.status(404).json({ error: 'branch_not_found' });
+  const scopes = branchIds.length ? branches : [null];
+  const existing = await db('notify_recipients').whereRaw('LOWER(email) = ?', [email]).pluck('branch_id');
+  const fresh = scopes.filter((id) => !existing.includes(id));
+  const [{ n }] = await db('notify_recipients').count({ n: '*' });
+  if (Number(n) + fresh.length > MAX_RECIPIENTS) return res.status(422).json({ error: 'too_many_recipients', max: MAX_RECIPIENTS });
+  if (fresh.length) await db('notify_recipients').insert(fresh.map((branch_id) => ({ email, branch_id })));
+  res.status(201).json(await notifyPayload());
+});
+
+adminRouter.delete('/notify/recipients/:id', async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(404).json({ error: 'not_found' });
+  const deleted = await db('notify_recipients').where({ id }).del();
+  if (!deleted) return res.status(404).json({ error: 'not_found' });
+  res.json(await notifyPayload());
+});
+
+adminRouter.put('/notify/settings', async (req, res) => {
+  const parsed = z.object({ mode: z.enum(NOTIFY_MODES) }).safeParse(req.body);
+  if (!parsed.success) return validationError(res, parsed.error);
+  await setNotifySettings(parsed.data);
+  res.json(await notifyPayload());
+});
+
+// อีเมลทดสอบถึงผู้รับทุกคน — เข้าคิวที่นี่ แล้วหน้าเว็บเรียก /api/notify-flush (Vercel) ให้ส่งทันที
+adminRouter.post('/notify/test', async (_req, res) => {
+  const [{ n }] = await db('notify_recipients').count({ n: '*' });
+  if (!Number(n)) return res.status(422).json({ error: 'no_recipients' });
+  await db('email_outbox').insert({ kind: 'test' });
+  res.status(201).json({ ok: true });
 });

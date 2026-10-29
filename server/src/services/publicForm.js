@@ -1,6 +1,7 @@
 import { db } from '../db/knex.js';
 import { resolveLink, getLatestVersion } from './links.js';
 import { validateAnswers, questionsForChannel, normalizeChannel, CHANNELS } from './questions.js';
+import { queueResponseEmail } from './notify.js';
 
 // ฟอร์มลูกค้า (เปิดจาก QR) — ใช้ร่วมกันทั้ง Express บน Render (routes/public.js)
 // และ Vercel Functions (api/r/…) ที่ทำให้ลูกค้าไม่ต้องรอ Render ตื่น
@@ -86,6 +87,7 @@ export async function submitForm(token, rawBody, { userAgent = '', language = ''
     });
     await trx('answers').insert(result.rows.map((row) => ({ response_id: responseId, ...row })));
     await trx('sheet_outbox').insert({ response_id: responseId });
+    await queueResponseEmail(trx, responseId); // แจ้งเตือนอีเมล — ส่งจริงทีหลัง (flushEmails)
   });
 
   return { status: 201, body: { ok: true, thankYou: ctx.version.settings.thankYou ?? null } };

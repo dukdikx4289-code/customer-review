@@ -1,6 +1,7 @@
 # ปลุก Render (แพ็กเกจฟรีหลับเมื่อว่าง 15 นาที) ให้ worker ส่งคำตอบที่ค้างในคิวขึ้น Google Sheets
+# + ลองส่งอีเมลแจ้งเตือนที่ค้างในคิวใหม่ (Vercel: api/notify-flush.js)
 # ฟอร์มลูกค้าบันทึกผ่าน Vercel Functions จึงไม่ต้องรอ Render — แถวในชีทจะช้าได้สูงสุดประมาณรอบของ cron นี้
-# หมายเหตุ: GitHub ปิด schedule เองถ้า repo ไม่มี commit 60 วัน (เปิดกลับได้ที่แท็บ Actions) · ถ้าใช้ Render Starter ลบไฟล์นี้ได้
+# หมายเหตุ: GitHub ปิด schedule เองถ้า repo ไม่มี commit 60 วัน (เปิดกลับได้ที่แท็บ Actions) · ถ้าใช้ Render Starter ลบขั้น Ping ได้ (ขั้นส่งอีเมลยังต้องมี)
 name: wake-render
 
 on:
@@ -17,3 +18,7 @@ jobs:
     steps:
       - name: Ping /healthz (รอ Render ตื่นได้ถึง 3 นาที)
         run: curl -fsS --retry 3 --retry-delay 20 --max-time 180 https://customer-review-9s49.onrender.com/healthz
+
+      - name: ส่งอีเมลแจ้งเตือนที่ค้าง (ถ้ามี)
+        if: always()
+        run: curl -fsS -X POST --max-time 60 https://customer-review-web.vercel.app/api/notify-flush

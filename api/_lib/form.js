@@ -3,6 +3,13 @@
 // ทำให้ลูกค้าที่สแกน QR ไม่ต้องรอ Render (แพ็กเกจฟรีหลับเมื่อว่าง 15 นาที) — /api อื่นยัง rewrite ไป Render (vercel.json)
 // ตรรกะเดียวกับ Render ทุกอย่าง (server/src/services/publicForm.js) · ไฟล์ใน api/_lib ไม่ถูกสร้างเป็น function
 import { loadForm, submitForm } from '../../server/src/services/publicForm.js';
+import { flushEmails } from '../../server/src/services/notify.js';
+
+// waitUntil = ทำงานต่อหลังตอบลูกค้าแล้ว (ส่งอีเมลแจ้งเตือน) · ในเครื่อง/เทสต์ไม่มี @vercel/functions → รอให้จบในตัว
+const { waitUntil } = await import('@vercel/functions').catch(() => ({ waitUntil: (promise) => promise }));
+
+/** ส่งอีเมลที่ค้างในคิวเบื้องหลัง — ไม่ทำให้คำขอล้ม (EMAIL_ENABLED=false = ไม่ทำอะไร) */
+export const flushInBackground = () => waitUntil(flushEmails().catch((err) => console.error('Email notify:', err?.message ?? err)));
 
 const WINDOW_MS = 10 * 60 * 1000;
 const MAX_BODY_BYTES = 32 * 1024;
@@ -69,6 +76,7 @@ export function formHandler(action) {
       }
       if (result.status === 404) bucket('badToken', ip).count++;
       send(res, result.status, result.body);
+      if (action === 'submit' && result.status === 201) flushInBackground();
     } catch (err) {
       console.error(`${method} /api/r/${token.slice(0, 12)}.***${action === 'submit' ? '/submit' : ''}`, err);
       send(res, 500, { error: 'internal_error' });
