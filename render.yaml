@@ -25,7 +25,7 @@ services:
       - key: DASHBOARD_CACHE_TTL_SEC
         value: "60"
       - key: EMAIL_ENABLED
-        value: "false" # Render ฟรีบล็อกพอร์ตอีเมล — อีเมลส่งจาก Vercel (api/notify-flush) Render แค่เข้าคิว
+        value: "false" # อีเมลแจ้งเตือนส่งผ่าน Resend จาก Vercel (api/notify-flush) ที่เดียว — Render แค่จัดการผู้รับ/เข้าคิว
       - key: SHEETS_SYNC_ENABLED
         value: "true"
       - key: SHEETS_SYNC_INTERVAL_SEC

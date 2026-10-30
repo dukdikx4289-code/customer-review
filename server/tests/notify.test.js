@@ -11,7 +11,7 @@ await import('./helpers/localOnly.js');
 const { createApp } = await import('../src/app.js');
 const { db } = await import('../src/db/knex.js');
 const { newPublicId, newStaticSig } = await import('../src/services/tokens.js');
-const { flushEmails, buildEmail, isLowScore, isImportant, setNotifySettings, getNotifySettings } = await import('../src/services/notify.js');
+const { flushEmails, buildEmail, isLowScore, isImportant, setNotifySettings, getNotifySettings, _resendTransport } = await import('../src/services/notify.js');
 
 const app = createApp();
 const admin = request.agent(app);
@@ -21,12 +21,12 @@ const password = 'correct-horse-battery';
 const state = {};
 const mail = (domain) => `${suffix}@${domain}.example`;
 
-/** transport ปลอม: เก็บอีเมลไว้ตรวจ · fail = จำลอง Gmail ล่ม · delay = จำลองส่งช้า (เทสต์ส่งซ้ำ) */
+/** transport ปลอม: เก็บอีเมลไว้ตรวจ · fail = จำลอง Resend ปฏิเสธ · delay = จำลองส่งช้า (เทสต์ส่งซ้ำ) */
 const fakeTransport = ({ fail = false, delay = 0 } = {}) => ({
   sent: [],
   async send(msg) {
     if (delay) await new Promise((r) => setTimeout(r, delay));
-    if (fail) throw new Error('535 Gmail ปฏิเสธการล็อกอิน');
+    if (fail) throw new Error('Resend 403: The neawmoosaitaek.com domain is not verified');
     this.sent.push(msg);
   },
 });
@@ -186,15 +186,15 @@ test('โหมด "เฉพาะที่สำคัญ": ข้ามรี
   await setNotifySettings({ mode: 'all' });
 });
 
-test('Gmail ล่ม: เก็บ error + ลองใหม่รอบหน้าได้, ล้างคิวพร้อมกัน 2 ที่ไม่ส่งซ้ำ', async () => {
+test('ส่งไม่ผ่าน (เช่น โดเมนยังไม่ยืนยัน): เก็บ error + ลองใหม่รอบหน้าได้, ล้างคิวพร้อมกัน 2 ที่ไม่ส่งซ้ำ', async () => {
   await submit(state.tokenB, { score: 3 });
   const r = await lastResponse(state.branchB);
   await flushEmails({ transport: fakeTransport({ fail: true }) });
   const failed = await db('email_outbox').where({ response_id: r.id }).first();
   assert.equal(failed.attempts, 1);
-  assert.match(failed.last_error, /535/);
+  assert.match(failed.last_error, /not verified/);
   assert.equal(failed.sent_at, null);
-  assert.equal((await admin.get('/api/admin/notify')).body.stats.lastError.message.includes('535'), true);
+  assert.equal((await admin.get('/api/admin/notify')).body.stats.lastError.message.includes('not verified'), true);
 
   const t1 = fakeTransport({ delay: 150 });
   const t2 = fakeTransport({ delay: 150 });
@@ -214,4 +214,30 @@ test('อีเมลทดสอบ: ส่งถึงผู้รับทุ
 
 test('EMAIL_ENABLED=false และไม่มี transport: ไม่ส่งอะไร (เครื่อง dev/Render)', async () => {
   assert.deepEqual(await flushEmails(), { sent: 0, skipped: 0, failed: 0, disabled: true });
+});
+
+test('Resend API: POST พร้อม from/to/subject + Idempotency-Key, error ของ Resend ส่งต่อให้หน้าแอดมิน', async () => {
+  const calls = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    calls.push({ url, init });
+    return calls.length === 1
+      ? new Response(JSON.stringify({ id: 'abc' }), { status: 200 })
+      : new Response(JSON.stringify({ statusCode: 403, message: 'The neawmoosaitaek.com domain is not verified.' }), { status: 403 });
+  };
+  try {
+    await _resendTransport.send({ to: ['a@example.com', 'b@example.com'], subject: 'หัวเรื่อง', text: 't', html: '<p>h</p>', idempotencyKey: 'email-outbox-7' });
+    const { url, init } = calls[0];
+    assert.equal(url, 'https://api.resend.com/emails');
+    assert.equal(init.method, 'POST');
+    assert.match(init.headers.Authorization, /^Bearer /);
+    assert.equal(init.headers['Idempotency-Key'], 'email-outbox-7');
+    const body = JSON.parse(init.body);
+    assert.deepEqual(body.to, ['a@example.com', 'b@example.com']);
+    assert.equal(body.from, 'รีวิวเหนียวหมูไส้แตก <noreply@neawmoosaitaek.com>');
+    assert.equal(body.subject, 'หัวเรื่อง');
+    await assert.rejects(() => _resendTransport.send({ to: ['a@example.com'], subject: 's', text: 't', html: 'h' }), /Resend 403: The neawmoosaitaek.com domain is not verified/);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
 });

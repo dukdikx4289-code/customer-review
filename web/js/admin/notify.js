@@ -2,8 +2,8 @@ import { api, ApiError } from '../api.js';
 import { h, clear, toast, formatDateTime, formatNumber } from '../util.js';
 
 // แจ้งเตือนอีเมลรีวิวใหม่: ผู้รับ (ทุกสาขา/รายสาขา), โหมดส่ง, สถานะคิว, ส่งทดสอบ
-// ส่งจริงจาก Vercel (/api/notify-flush) — Render เข้าคิวอย่างเดียว (Render ฟรีบล็อกพอร์ตอีเมล)
-const GMAIL_DAILY = 500;
+// ส่งจริงผ่าน Resend จาก Vercel (/api/notify-flush) — Render เข้าคิวอย่างเดียว
+const DAILY_QUOTA = 100; // Resend ฟรี: 100 ฉบับ/วัน (ใช้ร่วมกับเว็บร้านถ้าใช้บัญชีเดียวกัน)
 const MODES = [
   ['all', 'ทุกรีวิว', 'ได้อีเมลทันทีทุกครั้งที่ลูกค้าส่งแบบสอบถาม'],
   ['important', 'เฉพาะรีวิวที่ต้องดู', 'คะแนนต่ำ (มีข้อที่ได้ 1–2 หรือเฉลี่ยต่ำกว่า 3) หรือมีข้อเสนอแนะ · ช่วยประหยัดโควตาเมื่อรีวิวเยอะ'],
@@ -34,7 +34,7 @@ export async function notifyView() {
       h(
         'div',
         { class: 'notify-stats' },
-        stat('ส่งวันนี้ (นับต่อผู้รับ)', `${formatNumber(s.sentToday, 0)} / ~${GMAIL_DAILY}`, 'โควตา Gmail ต่อวัน'),
+        stat('ส่งวันนี้ (นับต่อผู้รับ)', `${formatNumber(s.sentToday, 0)} / ${DAILY_QUOTA}`, 'โควตา Resend ฟรีต่อวัน'),
         stat('รอส่ง', formatNumber(s.pending, 0), s.pending ? 'จะลองส่งใหม่อัตโนมัติ' : null),
         stat('ส่งไม่สำเร็จ (7 วัน)', formatNumber(s.failed, 0)),
       ),
@@ -125,7 +125,7 @@ export async function notifyView() {
       try {
         await api('/admin/notify/test', { method: 'POST' });
         const result = await api('/notify-flush', { method: 'POST' }).catch(() => null);
-        if (result?.disabled) toast('ยังไม่ได้เปิดการส่งอีเมล (ตั้ง EMAIL_ENABLED + Gmail บน Vercel) — อีเมลทดสอบรออยู่ในคิว');
+        if (result?.disabled) toast('ยังไม่ได้เปิดการส่งอีเมล (ตั้ง EMAIL_ENABLED + RESEND_API_KEY บน Vercel) — อีเมลทดสอบรออยู่ในคิว');
         else if (result?.failed) toast('ส่งไม่สำเร็จ — ดูข้อผิดพลาดในกล่องสถานะ');
         else toast('ส่งแล้ว — ตรวจกล่องจดหมาย (และโฟลเดอร์สแปม)');
       } catch (err) {
@@ -164,6 +164,6 @@ export async function notifyView() {
   }
 
   draw();
-  const intro = 'ส่งอีเมลถึงผู้รับทุกครั้งที่มีรีวิวใหม่: ผู้รับ "ทุกสาขา" ได้ทุกรีวิว ผู้รับรายสาขาได้เฉพาะสาขานั้น · ส่งจาก Gmail ของร้าน (~500 ฉบับต่อวัน นับต่อผู้รับ)';
+  const intro = 'ส่งอีเมลถึงผู้รับทุกครั้งที่มีรีวิวใหม่: ผู้รับ "ทุกสาขา" ได้ทุกรีวิว ผู้รับรายสาขาได้เฉพาะสาขานั้น · ผู้ส่ง noreply@neawmoosaitaek.com ผ่าน Resend (ฟรี 100 ฉบับต่อวัน นับต่อผู้รับ)';
   return h('div', {}, h('div', { class: 'page-head' }, h('h1', {}, 'แจ้งเตือนอีเมล')), h('p', { class: 'muted' }, intro), holder);
 }

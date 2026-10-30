@@ -30,11 +30,11 @@ const schema = z.object({
   GOOGLE_SHEET_ID: z.string().optional().default(''),
   GOOGLE_SERVICE_ACCOUNT_JSON_B64: z.string().optional().default(''),
 
-  // แจ้งเตือนอีเมลรีวิวใหม่ผ่าน Gmail (App Password) — เปิดบน Vercel เท่านั้น (Render ฟรีบล็อกพอร์ตอีเมล) · dev/เทสต์ปิดไว้
+  // แจ้งเตือนอีเมลรีวิวใหม่ผ่าน Resend (HTTPS API) — production ตั้งบน Vercel · dev/เทสต์ปิดไว้
+  // EMAIL_ENABLED=true แต่ไม่มี RESEND_API_KEY = ไม่ส่ง (อีเมลรอในคิว) — ไม่ exit เพราะจะทำให้ฟอร์มลูกค้าบน Vercel ล่ม
   EMAIL_ENABLED: bool,
-  GMAIL_USER: z.string().optional().default(''),
-  GMAIL_APP_PASSWORD: z.string().optional().default(''),
-  EMAIL_FROM_NAME: z.string().optional().default('รีวิวเหนียวหมูไส้แตก'),
+  RESEND_API_KEY: z.string().optional().default(''),
+  EMAIL_FROM: z.string().optional().default('รีวิวเหนียวหมูไส้แตก <noreply@neawmoosaitaek.com>'),
 
   DASHBOARD_CACHE_TTL_SEC: z.coerce.number().int().min(0).default(60),
 
@@ -64,9 +64,8 @@ if (env.NODE_ENV === 'production') {
     console.error('SESSION_SECRET / LINK_SIGNING_SECRET ยังเป็นค่าตัวอย่าง ห้ามใช้ใน production');
     process.exit(1);
   }
-  if (env.EMAIL_ENABLED && (!env.GMAIL_USER || !env.GMAIL_APP_PASSWORD)) {
-    console.error('เปิด EMAIL_ENABLED แล้วต้องตั้ง GMAIL_USER และ GMAIL_APP_PASSWORD');
-    process.exit(1);
+  if (env.EMAIL_ENABLED && !env.RESEND_API_KEY) {
+    console.warn('เปิด EMAIL_ENABLED แต่ยังไม่ตั้ง RESEND_API_KEY — อีเมลแจ้งเตือนจะรอในคิวจนกว่าจะตั้ง');
   }
   if (env.SHEETS_SYNC_ENABLED && (!env.GOOGLE_SHEET_ID || !env.GOOGLE_SERVICE_ACCOUNT_JSON_B64)) {
     console.error('เปิด SHEETS_SYNC_ENABLED แล้วต้องตั้ง GOOGLE_SHEET_ID และ GOOGLE_SERVICE_ACCOUNT_JSON_B64');

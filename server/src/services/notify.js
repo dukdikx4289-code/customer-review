@@ -6,8 +6,8 @@ import { responseDetail } from './responses.js';
 
 // แจ้งเตือนอีเมลรีวิวใหม่
 // - submitForm เข้าคิว email_outbox ใน transaction เดียวกับคำตอบ (queueResponseEmail) → ไม่มีรีวิวไหนตกหล่น
-// - flushEmails ส่งจริงผ่าน Gmail: Vercel เรียกหลังตอบลูกค้าแล้ว (waitUntil) + api/notify-flush (GitHub ปลุกทุก 30 นาที)
-//   Render ฟรีบล็อกพอร์ตอีเมล จึงปิด EMAIL_ENABLED บน Render — Render ทำแค่จัดการผู้รับ/เข้าคิว
+// - flushEmails ส่งจริงผ่าน Resend (HTTPS API): Vercel เรียกหลังตอบลูกค้าแล้ว (waitUntil) + api/notify-flush (GitHub ปลุกทุก 30 นาที)
+//   เปิด EMAIL_ENABLED ที่ Vercel ที่เดียว — Render ทำแค่จัดการผู้รับ/เข้าคิว
 // - กันส่งซ้ำเมื่อหลาย instance ล้างคิวพร้อมกัน: จองแถวด้วย claim_id ก่อนส่ง (จองค้างเกิน 5 นาที = ปล่อยให้คนอื่นส่งต่อ)
 
 const MAX_ATTEMPTS = 8;
@@ -136,16 +136,33 @@ function buildTestEmail({ baseUrl = config.PUBLIC_BASE_URL } = {}) {
 }
 
 // ---------- ส่ง ----------
-let gmail = null;
-/** Gmail SMTP (App Password) — โหลด nodemailer เมื่อจะส่งจริงเท่านั้น */
-async function gmailTransport() {
-  if (!gmail) {
-    const { default: nodemailer } = await import('nodemailer');
-    const mailer = nodemailer.createTransport({ service: 'gmail', auth: { user: config.GMAIL_USER, pass: config.GMAIL_APP_PASSWORD } });
-    gmail = { send: (msg) => mailer.sendMail({ from: { name: config.EMAIL_FROM_NAME, address: config.GMAIL_USER }, ...msg }) };
-  }
-  return gmail;
-}
+const RESEND_URL = 'https://api.resend.com/emails';
+const SEND_GAP_MS = 600; // Resend จำกัดประมาณ 2 คำขอ/วินาที
+
+/**
+ * Resend API — ส่งผ่าน HTTPS (ไม่ใช้พอร์ตอีเมล) · idempotencyKey = คิวแถวเดิมส่งซ้ำไม่ได้ (เช่น ส่งสำเร็จแต่คำตอบหลุด แล้วลองใหม่)
+ * ผิดพลาด throw พร้อมข้อความจาก Resend (เช่น โดเมนยังไม่ยืนยัน) ให้ไปแสดงในหน้าแอดมิน
+ */
+const resendTransport = {
+  async send({ to, subject, text, html, idempotencyKey }) {
+    const res = await fetch(RESEND_URL, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${config.RESEND_API_KEY}`, 'Content-Type': 'application/json', ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}) },
+      body: JSON.stringify({ from: config.EMAIL_FROM, to, subject, text, html }),
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => null);
+      throw new Error(`Resend ${res.status}: ${body?.message ?? res.statusText}`);
+    }
+  },
+};
+
+/** สำหรับเทสต์ */
+export const _resendTransport = resendTransport;
+
+/** ส่งได้จริงที่เครื่องนี้ไหม (เปิด + มี key) */
+const canSend = () => config.EMAIL_ENABLED && Boolean(config.RESEND_API_KEY);
 
 /**
  * ส่งอีเมลที่ค้างในคิว (สูงสุด limit ฉบับ) · transport = { send({ to, subject, text, html }) } (เทสต์ส่งของปลอมเข้ามา)
@@ -153,7 +170,7 @@ async function gmailTransport() {
  */
 export async function flushEmails({ limit = 20, transport, database = db } = {}) {
   const result = { sent: 0, skipped: 0, failed: 0 };
-  if (!transport && !config.EMAIL_ENABLED) return { ...result, disabled: true };
+  if (!transport && !canSend()) return { ...result, disabled: true }; // ไม่แตะคิว — อีเมลรอจนกว่าจะตั้งค่าครบ
 
   const claimId = randomBytes(8).toString('hex');
   const free = (q) => q.whereNull('sent_at').whereNull('failed_at').where((w) => w.whereNull('claimed_at').orWhere('claimed_at', '<', new Date(Date.now() - CLAIM_TTL_MS)));
@@ -165,6 +182,7 @@ export async function flushEmails({ limit = 20, transport, database = db } = {})
   const settings = await getNotifySettings(database);
   const done = (row, patch) => database('email_outbox').where({ id: row.id }).update({ sent_at: new Date(), claim_id: null, ...patch });
 
+  let sentBefore = false;
   for (const row of rows) {
     try {
       let to;
@@ -188,7 +206,9 @@ export async function flushEmails({ limit = 20, transport, database = db } = {})
         result.skipped++;
         continue;
       }
-      await (transport ?? (await gmailTransport())).send({ to: to.join(', '), ...message });
+      if (sentBefore && !transport) await new Promise((r) => setTimeout(r, SEND_GAP_MS));
+      sentBefore = true;
+      await (transport ?? resendTransport).send({ to, ...message, idempotencyKey: `email-outbox-${row.id}` });
       await done(row, { recipients: to.length, last_error: null });
       result.sent++;
     } catch (err) {
@@ -203,7 +223,7 @@ export async function flushEmails({ limit = 20, transport, database = db } = {})
   return result;
 }
 
-/** สถานะสำหรับหน้าแอดมิน: ส่งวันนี้ (นับต่อผู้รับ เทียบโควตา Gmail), ค้าง, ล้มเหลว 7 วัน + error ล่าสุด */
+/** สถานะสำหรับหน้าแอดมิน: ส่งวันนี้ (นับต่อผู้รับ เทียบโควตา Resend), ค้าง, ล้มเหลว 7 วัน + error ล่าสุด */
 export async function notifyStats(database = db) {
   const now = Date.now();
   const bangkokMidnight = new Date(Math.floor((now + 7 * 3_600_000) / 86_400_000) * 86_400_000 - 7 * 3_600_000);
@@ -216,6 +236,6 @@ export async function notifyStats(database = db) {
     pending: Number(pending?.n ?? 0),
     failed: Number(failed?.n ?? 0),
     lastError: lastError ? { message: lastError.last_error, attempts: lastError.attempts, at: new Date(lastError.created_at).toISOString() } : null,
-    enabledHere: config.EMAIL_ENABLED,
+    enabledHere: canSend(),
   };
 }
