@@ -43,7 +43,20 @@ export async function recipientsFor(branchId, database = db) {
 
 const uniqueEmails = (list) => [...new Map(list.map((e) => [e.toLowerCase(), e])).values()];
 
-export const queueResponseEmail = (trx, responseId) => trx('email_outbox').insert({ response_id: responseId, kind: 'response' });
+// ตาราง email_outbox ถูกสร้างโดย migration ตอน Render deploy — แต่ Vercel อาจขึ้นก่อน
+// ตรวจก่อนเข้าคิว (จำไว้เมื่อพบแล้ว) เพื่อให้การบันทึกคำตอบลูกค้าไม่ล้มเพราะตารางยังไม่มี
+let outboxReady = false;
+async function hasOutbox(trx) {
+  if (!outboxReady) {
+    const [rows] = await trx.raw("SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = 'email_outbox' LIMIT 1");
+    outboxReady = rows.length > 0;
+  }
+  return outboxReady;
+}
+
+export async function queueResponseEmail(trx, responseId) {
+  if (await hasOutbox(trx)) await trx('email_outbox').insert({ response_id: responseId, kind: 'response' });
+}
 
 // ---------- เนื้อหาอีเมล ----------
 const ratingItems = (detail) => detail.items.filter((it) => it.type === 'rating' && it.value != null);
